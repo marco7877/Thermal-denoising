@@ -6,13 +6,10 @@ Created on Fri Oct 20 15:23:25 2023
 @author: mflores
 """
 
-from nilearn import image
-from nilearn import signal
 from nilearn.masking import (
         apply_mask,
         compute_epi_mask
         )
-from scipy import stats
 import numpy as np
 import pandas as pd
 import os
@@ -33,7 +30,6 @@ from plotnine import (
         panel_border,
         element_blank,
         element_rect)
-from itertools import combinations
 #####################################################################################
 ###### Arguments ####################################################################
 #####################################################################################
@@ -72,32 +68,47 @@ overwrite = args.overwrite
 ###### Functions ####################################################################
 #####################################################################################
 def scatter_plot(subject,task,methodx,methody,directory=source_directory,automask=True,mask_file=""):
-    epi_file1=directory+"/"+subject+"_ses-1_"+task+"_OC_part-mag_bold_"+methodx+"_gm_union.nii.gz"
-    epi_file2=directory+"/"+subject+"_ses-1_"+task+"_OC_part-mag_bold_"+methody+"_gm_union.nii.gz"
+    gm_file1=directory+"/"+subject+"_ses-1_"+task+"_OC_part-mag_bold_"+methodx+"_gm_union.nii.gz"
+    gm_file2=directory+"/"+subject+"_ses-1_"+task+"_OC_part-mag_bold_"+methody+"_gm_union.nii.gz"
+    ngm_file1=directory+"/"+subject+"_ses-1_"+task+"_OC_part-mag_bold_"+methodx+"_non-gm_union.nii.gz"
+    ngm_file2=directory+"/"+subject+"_ses-1_"+task+"_OC_part-mag_bold_"+methody+"_non-gm_union.nii.gz"
     if automask == True:
         # We assume both epi are on the same space and mask
-        mask=compute_epi_mask(epi_file1,exclude_zeros=True)
+        gm_mask=compute_epi_mask(gm_file1,exclude_zeros=True)
+        ngm_mask=compute_epi_mask(ngm_file1,exclude_zeros=True)
     else:
-        mask=compute_epi_mask(mask_file,exclude_zeros=True)
-    masked_datay=apply_mask(epi_file1,mask)
-    masked_datax=apply_mask(epi_file1,mask)
-    df_plot=pd.DataFrame({'X':masked_datax,'Y':masked_datay})
-    plotnine=(ggplot(df_plot,aes("X","Y"))
-            +geom_point(alpha=0.3,colour="gray")
+        gm_mask=compute_epi_mask(mask_file,exclude_zeros=True)
+    print(f"""Loading gm file: {gm_file2} as y axis""")
+    masked_data_gm_y=apply_mask(gm_file2,gm_mask)
+    print(f"""Loading gm file: {gm_file1} as x axis""")
+    masked_data_gm_x=apply_mask(gm_file1,gm_mask)
+    print(f"""Loading non-gm file: {ngm_file2} as y axis""")
+    masked_data_ngm_y=apply_mask(ngm_file2,ngm_mask)
+    print(f"""Loading gm file: {ngm_file1} as x axis""")
+    masked_data_ngm_x=apply_mask(ngm_file1,ngm_mask)
+    df_gm=pd.DataFrame({'X':masked_data_gm_x,'Y':masked_data_gm_y,"type":"gray matter"})
+    df_ngm=pd.DataFrame({'X':masked_data_ngm_x,'Y':masked_data_ngm_y,"type":"non-gray matter"})
+    df_plot=pd.concat([df_gm,df_ngm],axis=0)
+    df_plot=df_plot.replace(0,np.nan)
+    df_plot=df_plot.dropna(axis=0)
+    plotnine_img=(ggplot(df_plot,aes("X","Y",color="type"))
+            +geom_point(alpha=0.3)
             +geom_smooth(method="lm")
             +geom_abline(intercept=0,slope=1,colour="red",linetype="dotted")
-            +scale_x_continuous(limits=[0,150])
-            +scale_y_continuous(limits=[0,150])
-            +xlab(task+" "+methodx)
-            +ylab(task+" "+methody)
-            +theme(
-                panel_background=element_rect(fill="white"),
-                panel_grid=element_blank(),
-                panel_border=element_blank())
-            )
-    plotnine.draw()
-    plotnine.save(directory+"/"+subject+task+"vanilla-"+methody+".png",verbose=False)
+            +scale_x_continuous(limits=[0,200])
+            +scale_y_continuous(limits=[0,400])
+            +xlab("tSNR "+methodx)
+            +ylab("tSNR "+methody)
+            +theme_classic())
+    plotnine_img.draw()
+    plotnine_img.save(directory+"/"+subject+task+"vanilla-"+methody+".png",verbose=False)
 #####################################################################################
 ###### Main      ####################################################################
 #####################################################################################
-
+for subject in subjects:
+    for task in tasks:
+        for method in methods:
+            try:
+                scatter_plot(subject,task,"vanilla",method)
+            except:
+                print(f"""Something went wrong for subject: {subject}, task:{task}, and method:{method}""")
