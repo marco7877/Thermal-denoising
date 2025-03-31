@@ -161,6 +161,7 @@ def scatter_plotT2sPCT(subject,task,methodx,directory=source_directory,automask=
     ##############################
     print("T2* series (%)")
     ##############################
+    directory=directory.replace("analysis","T2")
     file1=directory+"/"+subject+"_ses-1_"+task+"_T2spc_part-mag_bold_"+methodx+".nii.gz"
     if automask == True:
         # We assume both epi are on the same space and mask
@@ -210,4 +211,9 @@ for subject in subjects:
                 scatter_plotS0T2(subject,task,"vanilla",method)
                 scatter_plotT2sPCT(subject,task,method)
             except:
+                print(f"""############################################################################""")
+                print(f"""############################################################################""")
+                print(f"""########################  ERROR  #############  ERROR  #####################""")
                 print(f"""Something went wrong for subject: {subject}, task:{task}, and method:{method}""")
+                print(f"""############################################################################""")
+                print(f"""############################################################################""")
