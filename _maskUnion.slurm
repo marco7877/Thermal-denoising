@@ -3,7 +3,7 @@
 #SBATCH --qos=regular
 #SBATCH --job-name=goodSignal_mask_union
 #SBATCH --nodes=1
-#SBATCH --cpus-per-task=8
+#SBATCH --ntasks=4
 #SBATCH --time=00:30:00
 #SBATCH --mem=30G
 #SBATCH --array=1-10

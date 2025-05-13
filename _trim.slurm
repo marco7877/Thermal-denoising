@@ -1,10 +1,10 @@
 #!/bin/bash
 #SBATCH --partition=general
 #SBATCH --qos=regular
-#SBATCH --job-name=trim_mppca_RS
+#SBATCH --job-name=trim_halves_nordic
 #SBATCH --nodes=1
 #SBATCH --cpus-per-task=8
-#SBATCH --time=00:45:00
+#SBATCH --time=01:20:00
 #SBATCH --mem=8G
 #SBATCH --array=1-10
 #SBATCH --mail-type=ALL,ARRAY_TASKS
@@ -21,7 +21,7 @@ tasks=( "task-HABLA1200" "task-HABLA1700" )
 list_subj=( "003" "001" "002" "004" "005" )
 #list_subj=( "01" "02" "03" "04" "06" "07" "08" "09" "11" "12" "14" "15" "16" "18" "19" "20" "21" )
 #runs=( 1 2 )
-methods=( "mppca" )
+methods=( "nordic" )
 counter=0
 for n_sub in "${list_subj[@]}" 
 do
@@ -60,7 +60,7 @@ output=/scratch/mflores/Resting_State/${subj}/ses-1/${preproc}
 trimvol=0 # number of volumes to trim due to steaty state magnetization
 
 noise=3 # number of noise volumes
-
+halves="False"
 nechoes=4
 
 # MAIN
@@ -68,7 +68,7 @@ nechoes=4
 mkdir -p ${output}
 
 
-for parts in part-mag
+for parts in part-phase part-mag
 do
 
 	list_echoes=( "1" "2" "3" "4" )
@@ -94,10 +94,33 @@ do
 				-prefix "${output}/${subj}_ses-1_${task}_echo-${n_echo}_${parts}_bold_${method}_dsd.nii.gz" -overwrite
 			echo "3dcalc -a "${origin}/${subj}_ses-1_${task}_echo-${n_echo}_${parts}_bold.nii.gz[${trimvol}..${vol}]" -expr 'a' \
 				-prefix "${output}/${subj}_ses-1_${task}_echo-${n_echo}_${parts}_bold_${method}_dsd.nii.gz" -overwrite"
+
 			if [[ "${method}" == "vanilla" ]]
 			then
 				mv ${output}/${subj}_ses-1_${task}_echo-${n_echo}_${parts}_bold_${method}_dsd.nii.gz ${output}/${subj}_ses-1_${task}_echo-${n_echo}_${parts}_bold_${method}.nii.gz
 				echo "mv ${output}/${subj}_ses-1_${task}_echo-${n_echo}_${parts}_bold_${method}_dsd.nii.gz ${output}/${subj}_ses-1_${task}_echo-${n_echo}_${parts}_bold_${method}.nii.gz"
+			if [[ $halves == "True" ]]
+			then
+				epi_whole=${output}/${subj}_ses-1_${task}_echo-${n_echo}_${parts}_bold_${method}.nii.gz
+				n_epi_whole=$(3dinfo -nvi ${epi_whole})
+				epi_half=$(($n_epi_whole/2))
+				echo "Triming ${epi_whole} in halves"
+				3dcalc -a "${epi_whole}[0..${epi_half}]" -expr "a" -prefix ${output}/${subj}_ses-1_${task}_echo-${n_echo}_${parts}_bold_${method}1.nii.gz -overwrite
+
+				3dcalc -a "${epi_whole}[${epi_half}..$]" -expr "a" -prefix ${output}/${subj}_ses-1_${task}_echo-${n_echo}_${parts}_bold_${method}2.nii.gz -overwrite
+
+			fi
+			fi
+			if [[ $halves == "True" ]]
+			then
+				epi_whole=${output}/${subj}_ses-1_${task}_echo-${n_echo}_${parts}_bold_${method}_dsd.nii.gz
+				n_epi_whole=$(3dinfo -nvi ${epi_whole})
+				epi_half=$(($n_epi_whole/2))
+				echo "Triming ${epi_whole} in halves"
+				3dcalc -a "${epi_whole}[0..${epi_half}]" -expr "a" -prefix ${output}/${subj}_ses-1_${task}_echo-${n_echo}_${parts}_bold_${method}_dsd1.nii.gz -overwrite
+
+				3dcalc -a "${epi_whole}[${epi_half}..$]" -expr "a" -prefix ${output}/${subj}_ses-1_${task}_echo-${n_echo}_${parts}_bold_${method}_dsd2.nii.gz -overwrite
+
 			fi
 		fi
 

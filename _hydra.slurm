@@ -1,12 +1,12 @@
 #!/bin/bash
 #SBATCH --partition=general
 #SBATCH --qos=regular
-#SBATCH --job-name=HYDRA_RS3
+#SBATCH --job-name=HYDRA_sub5
 #SBATCH --nodes=1
 #SBATCH --cpus-per-task=16
 #SBATCH --time=3:00:00
 #SBATCH --mem=80G
-#SBATCH --array=1-10
+#SBATCH --array=1-2
 #SBATCH --mail-type=ALL
 #SBATCH --mail-user=mflores@bcbl.eu
 #SBATCH --error=/scratch/mflores/Resting_State/logs/%x_%a_%j.txt
@@ -23,8 +23,7 @@ echo "##################################################"
 
 list_task=( "HABLA1200" "HABLA1700" )
 #runs=( "1" "2" )
-list_subj=( "003" "001" "002" "004" "005" )
-
+list_subj=( "005" )
 counter=0
 for n_sub in "${list_subj[@]}" 
 do
