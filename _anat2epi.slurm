@@ -34,8 +34,8 @@ allign_epi2anat="False"
 cp_files="False"
 counter=0
 union_gm_wm="True"
-T2="False"
-R2="False"
+T2="True"
+R2="True"
 residuals="True"
 for task in "${tasks[@]}"
 do
@@ -247,9 +247,9 @@ if [[ ${residuals} == True ]] && [[ ${unionMask_tasks} == True ]];then
 	echo "##################################################"
 	echo " Using GM in the functional space to mask OC residuals"
 	echo "##################################################"
-	3dcalc -a ${root}/tedana_${task}_meica_residuals/desc-optcom_bold.nii.gz -b ${alligned_mask_union} -expr '(a*b)' -prefix ${dir}/analysis_timeSeries/${target_residuals}_gm_union.nii.gz -overwrite
+	3dcalc -a ${root}/tedana_${task}_meicaresiduals${volume}/desc-optcom_bold.nii.gz -b ${alligned_mask_union} -expr '(a*b)' -prefix ${dir}/analysis_timeSeries/${target_residuals}_gm_union.nii.gz -overwrite
 
-	3dcalc -a ${root}/tedana_${task}_meica_residuals/desc-optcom_bold.nii.gz -b ${non_gm_mask_corrected_union} -expr '(a*b)' -prefix ${dir}/analysis_timeSeries/${target_residuals}_non-gm_union.nii.gz -overwrite
+	3dcalc -a ${root}/tedana_${task}_meicaresiduals${volume}/desc-optcom_bold.nii.gz -b ${non_gm_mask_corrected_union} -expr '(a*b)' -prefix ${dir}/analysis_timeSeries/${target_residuals}_non-gm_union.nii.gz -overwrite
 
 fi
 echo "##################################################"
