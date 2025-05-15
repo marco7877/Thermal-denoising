@@ -1,12 +1,12 @@
 #!/bin/bash -l
 #SBATCH --partition=general
 #SBATCH --qos=regular
-#SBATCH --job-name=MEICA_OC_1700_residuals
+#SBATCH --job-name=MEICA_OC
 #SBATCH --nodes=1
 #SBATCH --cpus-per-task=8
 #SBATCH --time=06:00:00
 #SBATCH --mem=30G
-#SBATCH --array=1-25
+#SBATCH --array=1-40
 #SBATCH --mail-type=ALL,ARRAY_TASKS
 #SBATCH --mail-user=mflores@bcbl.eu
 #SBATCH --error=/scratch/mflores/Resting_State/logs/%x_%a_%j.txt
@@ -15,26 +15,24 @@
 module load Anaconda3
 source activate /data/mflores/TEDANA/
 
+#module load AFNI
 
 
 echo "##################################################"
 echo "MEICA JOB ${SLURM_ARRAY_TASK_ID}"
 echo "##################################################"
-tasks=( "task-HABLA1700" )
+tasks=( "task-HABLA1700" "task-HABLA1200" )
 list_subj=( "003" "001" "002" "004" "005" )
-methods=(  "nordic" "tmmpca" "hydra" "mppca" "vanilla")
-#method=( "nordic" )
-#list_subj=( "01" "02" "03" "04" "06" "07" "08" "09" "11" "12" "14" "15" "16" "18" "19" "20" "21" )
-#runs=( 1 2 )
-#trees=( "tedana_orig" )
+methods=(  "nordic" "tmmpca" "hydra" "mppca" )
+
 volume=""
 counter=0
 tedana="True"
 t2smap="True"
-residuals="True"
+residuals="False"
+# ir residuals == true tedana and t2smap will not be useful
 # Define echo times for each dataset 
-echo_times="13.4 36.1 58.8 81.5"
-#echo_times="11.2 28.1 45 61.9"
+
 for n_sub in "${list_subj[@]}" 
 do
 	for task in "${tasks[@]}"
@@ -52,6 +50,11 @@ do
 done
 
 tree=meica
+if [[ ${task} = "task-HABLA1700" ]];then
+	echo_times="13.4 36.1 58.8 81.5"
+elif [[ ${task} = "task-HABLA1200" ]];then
+	echo_times="11.2 28.1 45 61.9"
+fi
 
 
 echo "##################################################"
@@ -94,16 +97,28 @@ echo "List of echoes is ${list_echoes}"
 # generate string with filenames of echoes for tedana
 for n_echo in 2 3 4
 do
-	if [[ $residuals == "True" ]];then
-		t2=" --t2smap ${output}bold${volume}/T2starmap.nii.gz "
-	else
-		t2=""
-	fi
 	mag=$part_mag" "${input}/${subj}_ses-1_${task}_echo-${n_echo}_part-mag_${part}_${method}_mcf_al${ext}
 	part_mag=$mag
 done
 
 out_dir=${output}${part}${volume}
+if [[ $residuals == "True" ]];then
+input_weights=/scratch/mflores/Resting_State/${subj}/ses-1/func_preproc_vanilla/tedana_${task}_${tree}bold${volume}
+	echo "##################################################"
+	echo "Making OC from residuals"
+	echo "##################################################"
+part_mag1=${input}/${subj}_ses-1_${task}_echo-1_part-mag_${part}_${method}_mcf_al${ext}
+part_mag2=${input}/${subj}_ses-1_${task}_echo-2_part-mag_${part}_${method}_mcf_al${ext}
+part_mag3=${input}/${subj}_ses-1_${task}_echo-3_part-mag_${part}_${method}_mcf_al${ext}
+part_mag4=${input}/${subj}_ses-1_${task}_echo-4_part-mag_${part}_${method}_mcf_al${ext}
+weight_mag1=${input_weights}/${subj}_${task}_OC_echo-1_weight.nii.gz
+weight_mag2=${input_weights}/${subj}_${task}_OC_echo-2_weight.nii.gz
+weight_mag3=${input_weights}/${subj}_${task}_OC_echo-3_weight.nii.gz
+weight_mag4=${input_weights}/${subj}_${task}_OC_echo-4_weight.nii.gz
+
+3dcalc -a ${part_mag1} -b ${part_mag2} -c ${part_mag3} -d ${part_mag4} -e ${weight_mag1} -f ${weight_mag2} -g ${weight_mag3} -h ${weight_mag4} -i ${mask_preproc}  -expr '(a*e+b*f+c*g+d*h)*i' -prefix /scratch/mflores/Resting_State/${subj}/ses-1/func_preproc_${method}/tedana_${task}_${tree}${part}${volume}/desc-optcom_bold.nii.gz -overwrite 
+	else
+
 if [[ $tedana == "True" ]];then
 	echo "##################################################"
 	echo "tedana -d ${mag} -e ${echo_times} --out-dir ${out_dir} --tree ${tree} --verbose --debug True --mask ${mask_preproc}  --overwrite"
@@ -121,5 +136,4 @@ if [[ $t2smap == "True" ]];then
 
 	rmdir --ignore-fail-on-non-empty ${out_dir}/t2smap${volume}
 fi
-
-
+fi
