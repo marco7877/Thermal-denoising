@@ -1,7 +1,7 @@
 #!/bin/bash -l
 #SBATCH --partition=general
 #SBATCH --qos=regular
-#SBATCH --job-name=MEICA_OC_residuals
+#SBATCH --job-name=MEICA_OC
 #SBATCH --nodes=1
 #SBATCH --cpus-per-task=8
 #SBATCH --time=06:00:00
@@ -15,6 +15,7 @@
 module load Anaconda3
 source activate /data/mflores/TEDANA/
 
+#module load AFNI
 
 
 echo "##################################################"
@@ -28,7 +29,7 @@ volume=""
 counter=0
 tedana="True"
 t2smap="True"
-residuals="True"
+residuals="False"
 # ir residuals == true tedana and t2smap will not be useful
 # Define echo times for each dataset 
 
@@ -115,7 +116,7 @@ weight_mag2=${input_weights}/${subj}_${task}_OC_echo-2_weight.nii.gz
 weight_mag3=${input_weights}/${subj}_${task}_OC_echo-3_weight.nii.gz
 weight_mag4=${input_weights}/${subj}_${task}_OC_echo-4_weight.nii.gz
 
-3dcalc -a ${part_mag1} -b ${part_mag2} -c ${part_mag3} -d ${part_mag4} -e ${weight_mag1} -f ${weight_mag2} -g ${weight_mag3} -h ${weight_mag4} -i ${mask_preproc}  -expr '(a*e+b*f+c*g+d*h)*i' -prefix desc-optcom_bold.nii.gz 
+3dcalc -a ${part_mag1} -b ${part_mag2} -c ${part_mag3} -d ${part_mag4} -e ${weight_mag1} -f ${weight_mag2} -g ${weight_mag3} -h ${weight_mag4} -i ${mask_preproc}  -expr '(a*e+b*f+c*g+d*h)*i' -prefix /scratch/mflores/Resting_State/${subj}/ses-1/func_preproc_${method}/tedana_${task}_${tree}${part}${volume}/desc-optcom_bold.nii.gz -overwrite 
 	else
 
 if [[ $tedana == "True" ]];then
