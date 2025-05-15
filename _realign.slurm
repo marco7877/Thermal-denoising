@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH --partition=general
 #SBATCH --qos=regular
-#SBATCH --job-name=align_nordic_complete
+#SBATCH --job-name=align_nordic_residuals
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=16
 #SBATCH --time=00:40:00
@@ -24,7 +24,7 @@ ext=.nii.gz
 echo "Your files will have the extention: ${ext}"
 counter=0
 nechoes=4
-residuals="False"
+residuals="True"
 trans_matrix="False"
 
 echo My task ID is"${SLURM_ARRAY_TASK_ID}"
@@ -60,7 +60,7 @@ preproc=func_preproc_${method}
 origin=/scratch/mflores/Resting_State/${subj}/ses-1/${preproc}
 output=/scratch/mflores/Resting_State/${subj}/ses-1/${preproc}
 matrix_dir=/scratch/mflores/Resting_State/${subj}/ses-1/func_preproc_vanilla
-input=/scratch/mflores/Resting_State/${subj}/ses-1/func
+input=/data/HABLA/Resting_State/${subj}/ses-1/func
 
 
 
@@ -78,7 +78,7 @@ sbref=${input}/${subj}_ses-1_${task}_echo-1_part-mag_sbref.nii.gz
 sbref_ln=${output}/${subj}_ses-1_${task}_echo-1_part-mag_sbref.nii.gz
 
 if [[ ! -e ${sbref_ln} ]]; then
-	ln -s ${sbref} ${sbref_ln}
+	cp -s ${sbref} ${sbref_ln}
 fi
 
 matrix=${matrix_dir}/${subj}_ses-1_${task}_echo-1_part-mag_bold_vanilla_mcf.aff12.1D
