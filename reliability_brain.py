@@ -87,7 +87,10 @@ def reliability_analysis(subject,task,methodx,mask,directory=source_directory,
         data_mask=np.array(data_mask.dataobj)
         # creatind a 2D array of voxels * time series
         data_episeries_x=np.reshape(data_episeries_x,((prod(shape[0:-1])),shape[-1]))
-        data_mask=np.reshape(data_mask,((prod(shape)),0))
+        shape_mask=data_mask.shape
+        data_mask=np.reshape(data_mask,(prod(shape_mask),0))
+        # creating a mask of non zero values so only getting GM 
+        data_mask=np.ma.masked_where(data_mask[:,0]!=0,data_mask)
         print("data reshaped")
         # creating a mask of non zero values so only getting GM 
         epi_mask=np.ma.masked_where(data_mask[:,0]!=0)
@@ -116,8 +119,10 @@ def reliability_analysis(subject,task,methodx,mask,directory=source_directory,
         print("data reshaped")
         data_mask=load_img(mask)
         data_mask=np.array(data_mask.dataobj)
+        shape_mask=data_mask.shape
+        data_mask=np.reshape(data_mask,(prod(shape_mask)))
         # creating a mask of non zero values so only getting GM 
-        epi_mask=np.ma.masked_where(data_mask[:,0]!=0)
+        epi_mask=np.ma.masked_where(data_mask[:]!=0,data_mask)
         print(f"""masked created for {sum(epi_mask.mask)} voxels""")
         epi_half1=data_episeries_x1[epi_mask.mask,:]
         epi_half2=data_episeries_x2[epi_mask.mask,:]
@@ -127,10 +132,10 @@ def reliability_analysis(subject,task,methodx,mask,directory=source_directory,
     correlation_matrix_half2=np.corrcoef(epi_half2)
     print(f""" Functional connectivity for second half computed (pearson correlation) with shape {correlation_matrix_half2.shape}""")
     if savecorr == True:
-        file_corr1=directory+"/"+subject+"_ses-1_"+task+"_"+part+"_functional_connectivity_"+methodx+"_half1.csv"
+        file_corr1=directory+"/"+subject+"_ses-1_"+task+"_"+part+"_functional_connectivity_"+methodx+split+"_half1.csv"
         np.savetxt(file_corr1,correlation_matrix_half1,delimiter=",")
         print(f""" Functional connectivity for first half saved as {file_corr1}""")
-        file_corr2=directory+"/"+subject+"_ses-1_"+task+"_"+part+"_functional_connectivity_"+methodx+"_half2.csv"
+        file_corr2=directory+"/"+subject+"_ses-1_"+task+"_"+part+"_functional_connectivity_"+methodx+split+"_half2.csv"
         np.savetxt(file_corr2,correlation_matrix_half2,delimiter=",")
         print(f""" Functional connectivity for second half saved as {file_corr2}""")
     #del epi_half1
@@ -144,11 +149,11 @@ def reliability_analysis(subject,task,methodx,mask,directory=source_directory,
         plt.xlabel("Coefficient values")
         plt.ylabel("Frequency")
         fig.suptitle("Reliability coefficients histogram")
-        fig.savefig(directory+"/"+subject+"_ses-1_"+task+"_"+part+"_reliability_coefficients_"+methodx+"_histogram.png")
+        fig.savefig(directory+"/"+subject+"_ses-1_"+task+"_"+part+"_reliability_coefficients_"+methodx+split+"_histogram.png")
         plt.close(fig)
     print(f""" Reliability score computed voxel wise between two halves. result has shape: {reliability_vector.shape}""")
     if save == True:
-        file_reliability=directory+"/"+subject+"_ses-1_"+task+"_"+part+"_functional_connectivity_"+methodx+"_reliability.csv"
+        file_reliability=directory+"/"+subject+"_ses-1_"+task+"_"+part+"_functional_connectivity_"+methodx+split+"_reliability.csv"
         np.savetxt(file_reliability,reliability_vector,delimiter=",")
         print(f""" Reliability vector saved as {file_reliability}""")
     reliability_target=np.zeros((prod(shape[:-1])))
@@ -161,7 +166,7 @@ def reliability_analysis(subject,task,methodx,mask,directory=source_directory,
         plot_results=new_img_like(ref_img,brain_space)
         print("Created new nilearn object to visualize results")
         brain_reliability=plot_epi(plot_results,colorbar=True,draw_cross=False,cut_coords=((shape[0]//2),(shape[1]//2),(shape[2]//2)),cmap="inferno",vmin=0,vmax=0.5)
-        brain_reliability.savefig(directory+"/"+subject+"_ses-1_"+task+"_"+part+"_functional_connectivity_"+methodx+"_reliability.png")
+        brain_reliability.savefig(directory+"/"+subject+"_ses-1_"+task+"_"+part+"_functional_connectivity_"+methodx+split+"_reliability.png")
 
 #############################################################################################
 ###### Main      ####################################################################
@@ -169,12 +174,12 @@ def reliability_analysis(subject,task,methodx,mask,directory=source_directory,
 for subject in subjects:
     for task in tasks:
         for method in methods:
-            mask=directory+"/"+subject+"_ses-1_"+task+"_echo-1_part-mag_gm-alligned_mask.nii.gz"
+            mask=source_directory+"/"+subject+"_ses-1_"+task+"_echo-1_part-mag_gm-alligned_mask.nii.gz"
             try:
                 print(f"""############################################################################""")
                 print(f"""##########scatter_plotR2sPCT({subject},{task},{method})#######################""")
                 reliability_analysis(subject,task,mask,method,plot=True)
-            except Reliability split halves:
+            except:
                 print(f"""############################################################################""")
                 print(f"""############################################################################""")
                 print(f"""########################  ERROR  #############  ERROR  #####################""")
@@ -185,7 +190,7 @@ for subject in subjects:
                 print(f"""############################################################################""")
                 print(f"""##########scatter_plotR2sPCT({subject},{task},{method})#######################""")
                 reliability_analysis(subject,task,mask,method,plot=True, residuals=True)
-            except Reliability residuals:
+            except:
                 print(f"""############################################################################""")
                 print(f"""############################################################################""")
                 print(f"""########################  ERROR  #############  ERROR  #####################""")
@@ -196,7 +201,7 @@ for subject in subjects:
                 print(f"""############################################################################""")
                 print(f"""##########scatter_plotR2sPCT({subject},{task},{method})#######################""")
                 reliability_analysis(subject,task,mask,method,split=False,plot=True)
-            except Reliability diferent halves:
+            except:
                 print(f"""############################################################################""")
                 print(f"""############################################################################""")
                 print(f"""########################  ERROR  #############  ERROR  #####################""")
