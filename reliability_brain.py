@@ -62,7 +62,7 @@ tasks=['task-HABLA1200', 'task-HABLA1700']
 #######################################################################################
 #######################################################################################
 def reliability_analysis(subject,task,methodx,directory=source_directory,
-        plot=False,savecorr=False,save=True,hist=False):
+        split=True,plot=False,savecorr=False,save=True,hist=False):
     ##############################
     print("Loading timeseries")
     ##############################
@@ -72,26 +72,24 @@ def reliability_analysis(subject,task,methodx,directory=source_directory,
     print(f"""Loading epi file: {file1}""")
     data_episeries_x=load_img(file1)
     data_episeries_x=np.array(data_episeries_x.dataobj)
-    data_episeries_x2=load_img(file2)
-    data_episeries_x2=np.array(data_episeries_x2.dataobj)
     shape=data_episeries_x.shape
-    # creatind a 2D array of voxels * time series
-    data_episeries_x=np.reshape(data_episeries_x,((prod(shape[0:-1])),shape[-1]))
-    data_episeries_x2=np.reshape(data_episeries_x2,((prod(shape[0:-1])),shape[-1]))
-    print("data reshaped")
-    # creating a mask of non zero values so only getting GM 
-    epi_mask=np.ma.masked_where(data_episeries_x2[:,0]!=0,data_episeries_x2[:,0])
-    print(f"""masked created for {sum(epi_mask.mask)} voxels""")
-    # splitting volume in two 
-    epi_half1=data_episeries_x[epi_mask.mask,:(shape[-1]//2)]
-    epi_half2=data_episeries_x[epi_mask.mask,(shape[-1]//2):]
-    print(" Original epi time series divided in two")
-    # TODO: normalize voxelwise maybe pct change respect to mean
-    #epi_half1_mean=np.mean(epi_half1,axis=1)
-    #epi_half2_mean=np.mean(epi_half2,axis=1)
-    #scaled_epi_half1=(np.subtract(epi_half1,epi_half1_mean[:,np.newaxis]))/epi_half1_mean[:,np.newaxis]
-    #scaled_epi_half2=(np.subtract(epi_half2,epi_half2_mean[:,np.newaxis]))/epi_half2_mean[:,np.newaxis]
-    print(" Halves re-scaled to represent pct change with respect to mean time series value per voxel")
+    if split == True:
+        data_episeries_x2=load_img(file2)
+        data_episeries_x2=np.array(data_episeries_x2.dataobj)
+        # creatind a 2D array of voxels * time series
+        data_episeries_x=np.reshape(data_episeries_x,((prod(shape[0:-1])),shape[-1]))
+        data_episeries_x2=np.reshape(data_episeries_x2,((prod(shape[0:-1])),shape[-1]))
+        print("data reshaped")
+        # creating a mask of non zero values so only getting GM 
+        epi_mask=np.ma.masked_where(data_episeries_x2[:,0]!=0,data_episeries_x2[:,0])
+        print(f"""masked created for {sum(epi_mask.mask)} voxels""")
+        # splitting volume in two 
+        epi_half1=data_episeries_x[epi_mask.mask,:(shape[-1]//2)]
+        epi_half2=data_episeries_x[epi_mask.mask,(shape[-1]//2):]
+        print(" Original epi time series divided in two")
+    elif split == False:
+        #TODO: finish false condition where reliability gets computed between independent halves
+
     correlation_matrix_half1=np.corrcoef(epi_half1)
     print(f""" Functional connectivity for first half computed (pearson correlation) with shape {correlation_matrix_half1.shape}""")
     correlation_matrix_half2=np.corrcoef(epi_half2)
