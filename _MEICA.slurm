@@ -1,21 +1,21 @@
 #!/bin/bash -l
 #SBATCH --partition=general
 #SBATCH --qos=regular
-#SBATCH --job-name=MEICA_OC
+#SBATCH --job-name=MEICA_OC_residuals_nordic
 #SBATCH --nodes=1
 #SBATCH --cpus-per-task=8
 #SBATCH --time=06:00:00
 #SBATCH --mem=30G
-#SBATCH --array=1-40
+#SBATCH --array=1-10
 #SBATCH --mail-type=ALL,ARRAY_TASKS
 #SBATCH --mail-user=mflores@bcbl.eu
 #SBATCH --error=/scratch/mflores/Resting_State/logs/%x_%a_%j.txt
 #SBATCH --output=/scratch/mflores/Resting_State/logs/%x_%a_%j.txt
 
-module load Anaconda3
-source activate /data/mflores/TEDANA/
+#module load Anaconda3
+#source activate /data/mflores/TEDANA/
 
-#module load AFNI
+module load AFNI
 
 
 echo "##################################################"
@@ -23,13 +23,13 @@ echo "MEICA JOB ${SLURM_ARRAY_TASK_ID}"
 echo "##################################################"
 tasks=( "task-HABLA1700" "task-HABLA1200" )
 list_subj=( "003" "001" "002" "004" "005" )
-methods=(  "nordic" "tmmpca" "hydra" "mppca" )
-
+#methods=(  "nordic" "tmmpca" "hydra" "mppca" )
+methods=( "nordic" )
 volume=""
 counter=0
 tedana="True"
 t2smap="True"
-residuals="False"
+residuals="True"
 # ir residuals == true tedana and t2smap will not be useful
 # Define echo times for each dataset 
 
@@ -71,14 +71,16 @@ output=/scratch/mflores/Resting_State/${subj}/ses-1/func_preproc_${method}/tedan
 nechoes=4
 ext=${volume}.nii.gz
 
-mkdir -p ${output}
-mkdir -p ${output}/t2smap
-
 if [[ ${residuals} = "True" ]];then
 	part="residuals"
 else
 	part="bold"
 fi
+
+out_dir=${output}${part}${volume}
+mkdir -p ${out_dir}
+mkdir -p ${output_dir}/t2smap
+
 
 # Reference original volumes
 part_mag=${input}/${subj}_ses-1_${task}_echo-1_part-mag_${part}_${method}_mcf_al${ext}
@@ -101,7 +103,6 @@ do
 	part_mag=$mag
 done
 
-out_dir=${output}${part}${volume}
 if [[ $residuals == "True" ]];then
 input_weights=/scratch/mflores/Resting_State/${subj}/ses-1/func_preproc_vanilla/tedana_${task}_${tree}bold${volume}
 	echo "##################################################"
