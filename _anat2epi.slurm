@@ -1,15 +1,15 @@
 #!/bin/bash -l
 #SBATCH --partition=general
 #SBATCH --qos=regular
-#SBATCH --job-name=OC_newMasks_all-tasks_residuals
+#SBATCH --job-name=epi2anat_union-gm
 #SBATCH --nodes=1
-#SBATCH --ntasks-per-node=2
-#SBATCH --cpus-per-task=4
-#SBATCH --time=00:30:00
-#SBATCH --mem=16G
+#SBATCH --ntasks-per-node=1
+#SBATCH --cpus-per-task=1
+#SBATCH --time=00:10:00
+#SBATCH --mem=6G
 #SBATCH --mail-type=ALL,ARRAY_TASKS
 #SBATCH --mail-user=mflores@bcbl.eu
-#SBATCH --array=1-50
+#SBATCH --array=1-10
 #SBATCH --error=/scratch/mflores/Resting_State/logs/%x_%a_%j.txt
 #SBATCH --output=/scratch/mflores/Resting_State/logs/%x_%a_%j.txt
 
@@ -23,20 +23,19 @@ echo "##################################################"
 tasks=( "task-HABLA1700" "task-HABLA1200" )
 list_subj=( "001" "002" "003" "004" "005" )
 #runs=( 1 2 )
-methods=( "nordic" "hydra" "vanilla" "tmmpca" "mppca" )
-#methods=( "nordic" )
+#methods=( "nordic" "hydra" "vanilla" "tmmpca" "mppca" )
+methods=( "nordic" )
 SE="False"
 volume=""
-compute_mask="False"
+compute_mask="True"
 unionMask_tasks="True"
 skull_strip="False"
-allign_epi2anat="False"
-cp_files="False"
+allign_epi2anat="True"
 counter=0
 union_gm_wm="True"
 T2="True"
 R2="True"
-residuals="True"
+residuals="False"
 for task in "${tasks[@]}"
 do
 	for n_sub in "${list_subj[@]}" 
@@ -70,11 +69,11 @@ analysis_folders=( "analysis" "analysis_timeSeries" )
 echo analizing subject ${subj}
 
 mask=${origin}/${subj}_ses-1_${task}_echo-1_part-mag_brain_mask.nii.gz
-sbref=${origin}/${subj}_ses-1_${task}_echo-1_part-mag_sbref.nii.gz
+sbref=/data/HABLA/Resting_State/${subj}/ses-1/func/${subj}_ses-1_${task}_echo-1_part-mag_sbref.nii.gz
 t1=${origin_nat}/T1.nii.gz
 skstr_t1=${origin_nat}/${subj}_ses-1_acq-uniclean-sk-str_T1w.nii.gz
 
-masked_sbref=${root}/${subj}_ses-1_${task}_echo-1_part-mag_masked_sbref.nii.gz
+masked_sbref=/scratch/mflores/Resting_State/${subj}/ses-1/func_preproc_${method}/${subj}_ses-1_${task}_echo-1_part-mag_masked_sbref.nii.gz
 alligned_mask=${root}/${subj}_ses-1_${task}_echo-1_part-mag_alligned_mask.nii.gz
 alligned_mask_union=${root}/${subj}_ses-1_${task}_echo-1_part-mag_alligned_mask_union.nii.gz
 dilated_mask=${root}/${subj}_ses-1_${task}_echo-1_part-mag_dilated_mask.nii.gz
@@ -216,6 +215,8 @@ for directory in "${analysis_folders[@]}";do
 		3dcalc -a ${non_gm_mask_corrected} -b ${dir}/${directory}/${subj}_ses-1_${task}_echo-1_part-mag_brain_mask-union.nii.gz -expr '(a*b)' -prefix ${non_gm_mask_corrected_union} -overwrite
 	fi
 	if [[ $unionMask_tasks == True ]];then
+		3dcalc -a ${alligned_mask_union}  -b ${alligned_mask_union} -expr '(a*b)' -prefix ${dir}/${directory}/${subject}_ses-1_${task}_echo-1_part-mag_gm-alligned_mask-union.nii.gz -overwrite
+
 		3dcalc -a  ${dir}/${directory}/${target}_gm.nii.gz -b ${alligned_mask_union} -expr '(a*b)' -prefix ${dir}/${directory}/${target}_gm_union.nii.gz -overwrite
 		3dcalc -a  ${dir}/${directory}/${target}_non-gm.nii.gz -b ${non_gm_mask_corrected_union} -expr '(a*b)' -prefix ${dir}/${directory}/${target}_non-gm_union.nii.gz -overwrite
 	fi
