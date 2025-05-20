@@ -178,7 +178,7 @@ for subject in subjects:
             try:
                 print(f"""############################################################################""")
                 print(f"""##########scatter_plotR2sPCT({subject},{task},{method})#######################""")
-                reliability_analysis(subject,task,mask,method,plot=True)
+                reliability_analysis(subject,task,method,mask,plot=True)
             except:
                 print(f"""############################################################################""")
                 print(f"""############################################################################""")
@@ -189,7 +189,7 @@ for subject in subjects:
             try:
                 print(f"""############################################################################""")
                 print(f"""##########scatter_plotR2sPCT({subject},{task},{method})#######################""")
-                reliability_analysis(subject,task,mask,method,plot=True, residuals=True)
+                reliability_analysis(subject,task,method,mask,plot=True, residuals=True)
             except:
                 print(f"""############################################################################""")
                 print(f"""############################################################################""")
@@ -200,7 +200,7 @@ for subject in subjects:
             try:
                 print(f"""############################################################################""")
                 print(f"""##########scatter_plotR2sPCT({subject},{task},{method})#######################""")
-                reliability_analysis(subject,task,mask,method,split=False,plot=True)
+                reliability_analysis(subject,task,method,mask,split=False,plot=True)
             except:
                 print(f"""############################################################################""")
                 print(f"""############################################################################""")
