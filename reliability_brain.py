@@ -174,7 +174,7 @@ def reliability_analysis(subject,task,methodx,mask,directory=source_directory,
 for subject in subjects:
     for task in tasks:
         for method in methods:
-            mask=source_directory+"/"+subject+"_ses-1_"+task+"_echo-1_part-mag_gm-alligned_mask.nii.gz"
+            mask=source_directory+"/"+subject+"_ses-1_"+task+"_echo-1_part-mag_gm-alligned_mask-union.nii.gz"
             try:
                 print(f"""############################################################################""")
                 print(f"""##########scatter_plotR2sPCT({subject},{task},{method})#######################""")
