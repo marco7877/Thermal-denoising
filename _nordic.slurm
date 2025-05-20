@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH --partition=general
 #SBATCH --qos=regular
-#SBATCH --job-name=NORDIC
+#SBATCH --job-name=NORDIC_halves
 #SBATCH --nodes=1
 #SBATCH --cpus-per-task=16
 #SBATCH --time=3:00:00
@@ -51,7 +51,7 @@ preproc=func_preproc_${method}
 repo=/home/mflores/scripts
 origin=/scratch/mflores/Resting_State/${subj}/ses-1/${preproc}
 output=/scratch/mflores/Resting_State/${subj}/ses-1/${preproc}
-halves=False
+halves=True
 noise=3 # number of noise volumes
 magn_only=0
 
@@ -172,7 +172,7 @@ else
 		echo "3dcalc -a "${part_phase}.nii.gz[${noise_vol}..$]" -expr "a" -prefix ${noise_phase}.nii.gz -overwrite"
 		3dcalc -a "${part_phase}.nii.gz[${noise_vol}..$]" -expr "a" -prefix ${noise_phase}.nii.gz -overwrite
 
-		vol_half=$((noise_vol/2))
+		vol_half=$(($noise_vol/2))
 
 		3dcalc -a "${part_mag}.nii.gz[0..${vol_half}]" -expr "a" -prefix ${part_mag_half1}u.nii.gz -overwrite
 
@@ -219,12 +219,11 @@ else
 
 			echo "3dinfo -nvi ${output}/${part_mag_out}.nii.gz"
 
-			vol=$(($volumes-$noise))
+			vol=$(($volumes-1))
 
 			echo "Original data ${volumes} volumes, but after removing noise volumes it has ${vol} volumes"
 
 			echo "******************************************************************************"
-
 			o=$((i+1))
 			3dcalc -a "${origin}/${outs[$i]}.nii.gz[0..$vol]" -expr "a"  -prefix "${origin}/${subj}_ses-1_${task}_echo-${n_echo}_part-mag_bold_${method}${o}.nii.gz" -overwrite
 		done
