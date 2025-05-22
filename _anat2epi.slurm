@@ -1,7 +1,7 @@
 #!/bin/bash -l
 #SBATCH --partition=general
 #SBATCH --qos=regular
-#SBATCH --job-name=epi2anat_union-gm
+#SBATCH --job-name=epi2anat_union-gm_half2
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task=1
@@ -26,11 +26,11 @@ list_subj=( "001" "002" "003" "004" "005" )
 #methods=( "nordic" "hydra" "vanilla" "tmmpca" "mppca" )
 methods=( "nordic" )
 SE="False"
-volume=""
-compute_mask="True"
-unionMask_tasks="True"
+volume="2"
+compute_mask="False"
+unionMask_tasks="False"
 skull_strip="False"
-allign_epi2anat="True"
+allign_epi2anat="False"
 counter=0
 union_gm_wm="True"
 T2="True"
@@ -212,13 +212,9 @@ for directory in "${analysis_folders[@]}";do
 	cp ${non_gm_mask_corrected} ${dir}/${directory}/${subj}_ses-1_${task}_echo-1_part-mag_wm-alligned_mask.nii.gz
 	if [[ ${union_gm_wm} == True ]];then
 		3dcalc -a ${alligned_mask} -b ${dir}/${directory}/${subj}_ses-1_${task}_echo-1_part-mag_brain_mask-union.nii.gz  -expr '(a*b)' -prefix ${alligned_mask_union} -overwrite
-		3dcalc -a ${non_gm_mask_corrected} -b ${dir}/${directory}/${subj}_ses-1_${task}_echo-1_part-mag_brain_mask-union.nii.gz -expr '(a*b)' -prefix ${non_gm_mask_corrected_union} -overwrite
-	fi
-	if [[ $unionMask_tasks == True ]];then
-		3dcalc -a ${alligned_mask_union}  -b ${alligned_mask_union} -expr '(a*b)' -prefix ${dir}/${directory}/${subject}_ses-1_${task}_echo-1_part-mag_gm-alligned_mask-union.nii.gz -overwrite
 
 		3dcalc -a  ${dir}/${directory}/${target}_gm.nii.gz -b ${alligned_mask_union} -expr '(a*b)' -prefix ${dir}/${directory}/${target}_gm_union.nii.gz -overwrite
-		3dcalc -a  ${dir}/${directory}/${target}_non-gm.nii.gz -b ${non_gm_mask_corrected_union} -expr '(a*b)' -prefix ${dir}/${directory}/${target}_non-gm_union.nii.gz -overwrite
+		3dcalc -a  ${dir}/${directory}/${target}_non-gm.nii.gz -b ${alligned_mask_union} -expr '(a*b)' -prefix ${dir}/${directory}/${target}_non-gm_union.nii.gz -overwrite
 	fi
 done
 
@@ -232,7 +228,6 @@ if [[ ${T2} == True ]];then
 	echo "Computing GM for S0 map"
 	3dcalc -a ${dir}/T2/${target_S0}.nii.gz -b ${alligned_mask} -expr '(a*b)' -prefix ${dir}/T2/${target_S0}_gm.nii.gz -overwrite
 	3dcalc -a ${dir}/T2/${target_S0}.nii.gz -b ${non_gm_mask_corrected} -expr '(a*b)' -prefix ${dir}/T2/${target_S0}_non-gm.nii.gz -overwrite
-	cp ${alligned_mask} ${dir}/T2/${subj}_ses-1_${task}_echo-1_part-mag_gm-alligned_mask.nii.gz
 	cp ${alligned_mask} ${dir}/T2/${subj}_ses-1_${task}_echo-1_part-mag_gm-alligned_mask.nii.gz
 	cp ${non_gm_mask_corrected} ${dir}/T2/${subj}_ses-1_${task}_echo-1_part-mag_wm-alligned_mask.nii.gz
 	if [[ $unionMask_tasks == True ]];then
