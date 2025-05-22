@@ -138,6 +138,11 @@ if [[ $halves == False ]];then
 else
 
 	volumes=$(3dinfo -nvi ${origin}/${subj}_ses-1_${task}_echo-1_part-mag_bold_${method}_dsd.nii.gz)
+	noise_vol=$(($volumes-$(($noise-1))))
+	vol_half=$(($noise_vol/2))
+	echo "Unsplitted time series has ${volumes} volumes"
+	echo "After taking out noise scans we have ${noise_vol} volumes"
+	echo "Half of the data set is ${vol_half}"
 
 	for n_echo in "${list_echoes[@]}"
 	do
@@ -165,14 +170,15 @@ else
 
 		echo "Cutting volumes in halves"
 
-		noise_vol=$(($volumes-$(($noise-1))))
+		echo "Unsplitted time series has ${volumes} volumes"
+		echo "After taking out noise scans we have ${noise_vol} volumes"
+		echo "Half of the data set is ${vol_half}"
 
 		echo  "3dcalc  -a "${part_mag}.nii.gz[${noise_vol}..$]" -expr "a" -prefix ${noise_mag}.nii.gz -overwrite"
 		3dcalc -a "${part_mag}.nii.gz[${noise_vol}..$]" -expr "a" -prefix ${noise_mag}.nii.gz -overwrite
 		echo "3dcalc -a "${part_phase}.nii.gz[${noise_vol}..$]" -expr "a" -prefix ${noise_phase}.nii.gz -overwrite"
 		3dcalc -a "${part_phase}.nii.gz[${noise_vol}..$]" -expr "a" -prefix ${noise_phase}.nii.gz -overwrite
 
-		vol_half=$(($noise_vol/2))
 
 		3dcalc -a "${part_mag}.nii.gz[0..${vol_half}]" -expr "a" -prefix ${part_mag_half1}u.nii.gz -overwrite
 
@@ -190,7 +196,7 @@ else
 		3dcalc -a "${part_phase}.nii.gz[${vol_half}..$]" -expr "a" -prefix ${part_phase_half2}u.nii.gz -overwrite
 
 		3dTcat -prefix ${part_phase_half2}.nii.gz ${part_phase_half2}u.nii.gz "${noise_phase}.nii.gz[2]" -overwrite
-		
+
 		mags=(${part_mag_half1} ${part_mag_half2})
 		phases=(${part_phase_half1} ${part_phase_half2})
 		outs=(${part_mag_out1} ${part_mag_out2})
@@ -217,7 +223,7 @@ else
 
 			volumes=$(3dinfo -nvi ${output}/${outs[$i]}.nii.gz)
 
-			echo "3dinfo -nvi ${output}/${part_mag_out}.nii.gz"
+			echo "3dinfo -nvi ${output}/${outs[$i]}.nii.gz"
 
 			vol=$(($volumes-1))
 
