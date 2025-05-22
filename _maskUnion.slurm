@@ -46,6 +46,7 @@ dir=/scratch/mflores/Resting_State/${sub}/ses-1/func_preproc
 
 masks=/scratch/mflores/Resting_State/analysis/${sub}_ses-1_${task}_echo-1_part-mag_brain_mask-bucket.nii.gz
 mask_union=/scratch/mflores/Resting_State/analysis/${sub}_ses-1_${task}_echo-1_part-mag_brain_mask-union.nii.gz
+mask_union_ts=/scratch/mflores/Resting_State/analysis_timeSeries/${sub}_ses-1_${task}_echo-1_part-mag_brain_mask-union.nii.gz
 for method in "${methods[@]}";do
 	method_mask=${dir}_${method}/tedana_${task}_meicabold${volume}/desc-adaptiveGoodSignal_mask.nii.gz
 	method_mask_binary=${dir}_${method}/tedana_${task}_meicabold${volume}/desc-adaptiveGoodSignal_mask_binary.nii.gz
@@ -54,4 +55,5 @@ for method in "${methods[@]}";do
 ##	masks=${masks}" "${method_mask_binary}
 done
 3dmask_tool -input ${masks} -union -prefix ${mask_union} -overwrite
+ cp ${mask_union} ${mask_union_ts} 
 
