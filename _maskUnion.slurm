@@ -19,7 +19,7 @@ n_subs=( "sub-001" "sub-002" "sub-003" "sub-004" "sub-005" )
 methods=( "vanilla" "nordic" "mppca" "nordic_magn" "tmmpca" )
 tasks=( "task-HABLA1200" "task-HABLA1700" )
 counter=0
-
+volume=""
 for sub in "${n_subs[@]}" 
 do
 	for task in "${tasks[@]}"
@@ -47,8 +47,8 @@ dir=/scratch/mflores/Resting_State/${sub}/ses-1/func_preproc
 masks=/scratch/mflores/Resting_State/analysis/${sub}_ses-1_${task}_echo-1_part-mag_brain_mask-bucket.nii.gz
 mask_union=/scratch/mflores/Resting_State/analysis/${sub}_ses-1_${task}_echo-1_part-mag_brain_mask-union.nii.gz
 for method in "${methods[@]}";do
-	method_mask=${dir}_${method}/tedana_${task}_meica/desc-adaptiveGoodSignal_mask.nii.gz
-	method_mask_binary=${dir}_${method}/tedana_${task}_meica/desc-adaptiveGoodSignal_mask_binary.nii.gz
+	method_mask=${dir}_${method}/tedana_${task}_meicabold${volume}/desc-adaptiveGoodSignal_mask.nii.gz
+	method_mask_binary=${dir}_${method}/tedana_${task}_meicabold${volume}/desc-adaptiveGoodSignal_mask_binary.nii.gz
 	3dcalc -a ${method_mask} -expr 'astep(a,1)' -overwrite -prefix ${method_mask_binary}
 	3dbucket -aglueto ${masks} -fbuc ${method_mask_binary}
 ##	masks=${masks}" "${method_mask_binary}
