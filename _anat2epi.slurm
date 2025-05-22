@@ -1,7 +1,7 @@
 #!/bin/bash -l
 #SBATCH --partition=general
 #SBATCH --qos=regular
-#SBATCH --job-name=epi2anat_union-gm
+#SBATCH --job-name=epi2anat_union-gm_half2
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task=1
@@ -26,10 +26,10 @@ list_subj=( "001" "002" "003" "004" "005" )
 #methods=( "nordic" "hydra" "vanilla" "tmmpca" "mppca" )
 methods=( "nordic" )
 SE="False"
-volume=""
+volume="2"
 compute_mask="False"
 skull_strip="False"
-allign_epi2anat="True"
+allign_epi2anat="False"
 counter=0
 union_gm_wm="True"
 residuals="False"
@@ -70,9 +70,9 @@ sbref=/data/HABLA/Resting_State/${subj}/ses-1/func/${subj}_ses-1_${task}_echo-1_
 t1=${origin_nat}/T1.nii.gz
 skstr_t1=${origin_nat}/${subj}_ses-1_acq-uniclean-sk-str_T1w.nii.gz
 
-masked_sbref=/scratch/mflores/Resting_State/${subj}/ses-1/func_preproc_${method}/${subj}_ses-1_${task}_echo-1_part-mag_masked_sbref.nii.gz
+masked_sbref=/scratch/mflores/Resting_State/analysis/${subj}_ses-1_${task}_echo-1_part-mag_masked_sbref.nii.gz
 alligned_mask=${root}/${subj}_ses-1_${task}_echo-1_part-mag_alligned_mask.nii.gz
-alligned_gmmask_union=${root}/${subj}_ses-1_${task}_echo-1_part-mag_gm_mask-union.nii.gz
+alligned_gmmask_union=/scratch/mflores/Resting_State/analysis_timeSeries/${subj}_ses-1_${task}_echo-1_part-mag_gm_mask-union.nii.gz
 dilated_mask=${root}/${subj}_ses-1_${task}_echo-1_part-mag_dilated_mask.nii.gz
 non_gm_mask=${root}/${subj}_ses-1_${task}_echo-1_part-mag_non-gm_mask.nii.gz
 non_gm_mask_corrected=${root}/${subj}_ses-1_${task}_echo-1_part-mag_non-gm-corrected_mask.nii.gz
@@ -169,12 +169,16 @@ if [[ $compute_mask == True ]];then
 
 
 	3dmask_tool -input ${origin_nat}/${subj}_ses-1_${task}_${method}_analysis-mask_T1w.nii.gz -prefix ${dilated_mask} -overwrite
+fi
+if [[ ! -e ${masked_sbref} ]];then
 
 	echo "masking ${sbref} with ${mask} as: ${masked_sbref}"
 
 	3dcalc -a ${sbref} -b ${mask} -expr '(a*b)' -prefix ${masked_sbref} -overwrite
 
 fi
+
+
 if [[ $skull_strip == True ]];then
 	echo "skull stripping ${t1} as: ${skstr_t1}"
 
@@ -199,7 +203,7 @@ if [[ $allign_epi2anat == True ]];then
 fi
 #rm ${gm_mask}
 echo "##################################################"
-echo " Using GM in the functional space to mask tSNR maps-"
+echo " Using GM in the functional space to mask OC maps"
 echo "##################################################"
 
 for directory in "${analysis_folders[@]}";do
@@ -207,6 +211,8 @@ for directory in "${analysis_folders[@]}";do
 	cp ${non_gm_mask_corrected} ${dir}/${directory}/${subj}_ses-1_${task}_echo-1_part-mag_wm-alligned_mask.nii.gz
 	if [[ ${union_gm_wm} == True ]];then
 		3dcalc -a ${alligned_mask} -b ${dir}/${directory}/${subj}_ses-1_${task}_echo-1_part-mag_brain_mask-union.nii.gz  -expr '(a*b)' -prefix ${alligned_gmmask_union} -overwrite
+
+cp ${alligned_gmmask_union} /scratch/mflores/Resting_State/analysis/${subj}_ses-1_${task}_echo-1_part-mag_gm_mask-union.nii.gz
 
 		3dcalc -a  ${dir}/${directory}/${target}_gm.nii.gz -b ${alligned_gmmask_union} -expr '(a*b)' -prefix ${dir}/${directory}/${target}_gm_union.nii.gz -overwrite
 		3dcalc -a  ${dir}/${directory}/${target}_non-gm.nii.gz -b ${alligned_gmmask_union} -expr '(a*b)' -prefix ${dir}/${directory}/${target}_non-gm_union.nii.gz -overwrite
