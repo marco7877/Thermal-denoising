@@ -228,23 +228,4 @@ if [[ ${residuals} == True ]] && [[ ${unionMask_tasks} == True ]];then
 	3dcalc -a ${root}/tedana_${task}_meicaresiduals${volume}/desc-optcom_bold.nii.gz -b ${non_gm_mask_corrected_union} -expr '(a*b)' -prefix ${dir}/analysis_timeSeries/${target_residuals}_non-gm_union.nii.gz -overwrite
 
 fi
-echo "##################################################"
-echo " Using GM in the functional space to mask R2* and Delta R2* maps-"
-echo "##################################################"
-if [[ ${R2} == True ]];then
-	echo "Computing GM for R2* map"
-	3dcalc -a ${dir}/T2/${target_R2}.nii.gz -b ${alligned_mask} -expr '(a*b)' -prefix ${dir}/T2/${target_R2}_gm.nii.gz -overwrite
-	3dcalc -a ${dir}/T2/${target_R2}.nii.gz -b ${non_gm_mask_corrected} -expr '(a*b)' -prefix ${dir}/T2/${target_R2}_non-gm.nii.gz -overwrite
-	echo "Computing GM for delta R2* map"
-	3dcalc -a ${dir}/T2/${target_deltaR2}.nii.gz -b ${alligned_mask} -expr '(a*b)' -prefix ${dir}/T2/${target_deltaR2}_gm.nii.gz -overwrite
-	3dcalc -a ${dir}/T2/${target_deltaR2}.nii.gz -b ${non_gm_mask_corrected} -expr '(a*b)' -prefix ${dir}/T2/${target_deltaR2}_non-gm.nii.gz -overwrite
-	if [[ $unionMask_tasks == True ]];then
-		echo "Computing GM for R2* over the union mask between methods"
-		3dcalc -a  ${dir}/T2/${target_R2}_gm.nii.gz -b ${alligned_mask_union}  -expr '(a*b)' -prefix ${dir}/T2/${target_R2}_gm_union.nii.gz -overwrite
-		3dcalc -a  ${dir}/T2/${target_R2}_non-gm.nii.gz -b ${non_gm_mask_corrected_union} -expr '(a*b)' -prefix ${dir}/T2/${target_R2}_non-gm_union.nii.gz -overwrite
-		echo "Computing GM for delta R2* over the union mask between methods"
-		3dcalc -a  ${dir}/T2/${target_deltaR2}_gm.nii.gz -b ${alligned_mask_union} -expr '(a*b)' -prefix ${dir}/T2/${target_deltaR2}_gm_union.nii.gz -overwrite
-		3dcalc -a  ${dir}/T2/${target_deltaR2}_non-gm.nii.gz -b ${non_gm_mask_corrected_union} -expr '(a*b)' -prefix ${dir}/T2/${target_deltaR2}_non-gm_union.nii.gz -overwrite
-	fi
-fi
 
