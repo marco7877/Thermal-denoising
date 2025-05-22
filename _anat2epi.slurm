@@ -218,27 +218,7 @@ for directory in "${analysis_folders[@]}";do
 	fi
 done
 
-echo "##################################################"
-echo " Using GM in the functional space to mask t2* and S0 maps-"
-echo "##################################################"
-if [[ ${T2} == True ]];then
-	echo "Computing GM for T2* map"
-	3dcalc -a ${dir}/T2/${target_T2}.nii.gz -b ${alligned_mask} -expr '(a*b)' -prefix ${dir}/T2/${target_T2}_gm.nii.gz -overwrite
-	3dcalc -a ${dir}/T2/${target_T2}.nii.gz -b ${non_gm_mask_corrected} -expr '(a*b)' -prefix ${dir}/T2/${target_T2}_non-gm.nii.gz -overwrite
-	echo "Computing GM for S0 map"
-	3dcalc -a ${dir}/T2/${target_S0}.nii.gz -b ${alligned_mask} -expr '(a*b)' -prefix ${dir}/T2/${target_S0}_gm.nii.gz -overwrite
-	3dcalc -a ${dir}/T2/${target_S0}.nii.gz -b ${non_gm_mask_corrected} -expr '(a*b)' -prefix ${dir}/T2/${target_S0}_non-gm.nii.gz -overwrite
-	cp ${alligned_mask} ${dir}/T2/${subj}_ses-1_${task}_echo-1_part-mag_gm-alligned_mask.nii.gz
-	cp ${non_gm_mask_corrected} ${dir}/T2/${subj}_ses-1_${task}_echo-1_part-mag_wm-alligned_mask.nii.gz
-	if [[ $unionMask_tasks == True ]];then
-		echo "Computing GM for T2* over the union mask between methods"
-		3dcalc -a  ${dir}/T2/${target_T2}_gm.nii.gz -b ${alligned_mask_union}  -expr '(a*b)' -prefix ${dir}/T2/${target_T2}_gm_union.nii.gz -overwrite
-		3dcalc -a  ${dir}/T2/${target_T2}_non-gm.nii.gz -b ${non_gm_mask_corrected_union} -expr '(a*b)' -prefix ${dir}/T2/${target_T2}_non-gm_union.nii.gz -overwrite
-		echo "Computing GM for S0 over the union mask between methods"
-		3dcalc -a  ${dir}/T2/${target_S0}_gm.nii.gz -b ${alligned_mask_union} -expr '(a*b)' -prefix ${dir}/T2/${target_S0}_gm_union.nii.gz -overwrite
-		3dcalc -a  ${dir}/T2/${target_S0}_non-gm.nii.gz -b ${non_gm_mask_corrected_union} -expr '(a*b)' -prefix ${dir}/T2/${target_S0}_non-gm_union.nii.gz -overwrite
-	fi
-fi
+
 if [[ ${residuals} == True ]] && [[ ${unionMask_tasks} == True ]];then
 	echo "##################################################"
 	echo " Using GM in the functional space to mask OC residuals"
