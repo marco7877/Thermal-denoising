@@ -203,8 +203,6 @@ echo " Using GM in the functional space to mask tSNR maps-"
 echo "##################################################"
 
 for directory in "${analysis_folders[@]}";do
-	3dcalc -a ${dir}/${directory}/${target}.nii.gz -b ${alligned_mask} -expr '(a*b)' -prefix ${dir}/${directory}/${target}_gm.nii.gz -overwrite
-	3dcalc -a ${dir}/${directory}/${target}.nii.gz -b ${non_gm_mask_corrected} -expr '(a*b)' -prefix ${dir}/${directory}/${target}_non-gm.nii.gz -overwrite
 	cp ${alligned_mask} ${dir}/${directory}/${subj}_ses-1_${task}_echo-1_part-mag_gm-alligned_mask.nii.gz
 	cp ${non_gm_mask_corrected} ${dir}/${directory}/${subj}_ses-1_${task}_echo-1_part-mag_wm-alligned_mask.nii.gz
 	if [[ ${union_gm_wm} == True ]];then
