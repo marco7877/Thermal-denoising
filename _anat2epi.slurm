@@ -28,13 +28,10 @@ methods=( "nordic" )
 SE="False"
 volume="2"
 compute_mask="False"
-unionMask_tasks="False"
 skull_strip="False"
 allign_epi2anat="False"
 counter=0
 union_gm_wm="True"
-T2="True"
-R2="True"
 residuals="False"
 for task in "${tasks[@]}"
 do
@@ -219,7 +216,7 @@ for directory in "${analysis_folders[@]}";do
 done
 
 
-if [[ ${residuals} == True ]] && [[ ${unionMask_tasks} == True ]];then
+if [[ ${residuals} == True ]] && [[ ${union_gm_wm} == True ]];then
 	echo "##################################################"
 	echo " Using GM in the functional space to mask OC residuals"
 	echo "##################################################"
