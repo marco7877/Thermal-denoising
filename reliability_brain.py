@@ -116,7 +116,6 @@ def reliability_analysis(subject,task,methodx,mask,sbref,directory=source_direct
         print(f"""masked created for {sum(epi_mask.mask)} voxels""")
         epi_half1=data_episeries_x1[epi_mask.mask,:]
         epi_half2=data_episeries_x2[epi_mask.mask,:]
-        #TODO: finish false condition where reliability gets computed between independent halves
     correlation_matrix_half1=np.corrcoef(epi_half1)
     print(f""" Functional connectivity for first half computed (pearson correlation) with shape {correlation_matrix_half1.shape}""")
     correlation_matrix_half2=np.corrcoef(epi_half2)
