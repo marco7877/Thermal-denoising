@@ -13,9 +13,11 @@ from nilearn.masking import (
         )
 from nilearn.plotting import (
         plot_epi,
+        plot_stat_map,
         show)
 from nilearn.image import (
-        load_img
+        load_img,
+        resample_to_img
         )
 from nibabel import Nifti1Image
 from scipy.stats import pearsonr
@@ -79,43 +81,28 @@ def reliability_analysis(subject,task,methodx,mask,sbref,directory=source_direct
         file1=directory+"/"+subject+"_ses-1_"+task+"_"+part+"_part-mag_bold_"+methodx+".nii.gz"
         print(f"""Loading epi file: {file1} while applying mask: {mask}""")
         epi_mask=apply_mask(file1,mask)
-        epi_mask=np.transpose(epi_mask)
         shape=epi_mask.shape
         print(" Data loaded and masked!")
-        # creating a mask of non zero values so only getting GM 
-        
-        print(f"""Masked array has for {shape[0]} voxels""")
+        print(f"""Mask: {mask} contains {shape[0]} voxels""")
+        epi_mask=np.transpose(epi_mask)
         # splitting volume in two 
         epi_half1=epi_mask[:,:(shape[-1]//2)]
         epi_half2=epi_mask[:,(shape[-1]//2):]
         print(" Original epi time series divided in two")
     elif split == False:
-        file1=directory+"/"+subject+"_ses-1_"+task+"_"+part+"_part-mag_bold_"+methodx+"1_gm_union.nii.gz"
-        file2=directory+"/"+subject+"_ses-1_"+task+"_"+part+"_part-mag_bold_"+methodx+"2_gm_union.nii.gz"
-        file3=directory+"/"+subject+"_ses-1_"+task+"_OC_part-mag_bold_"+methodx+"_gm_union.nii.gz"
+        file1=directory+"/"+subject+"_ses-1_"+task+"_"+part+"_part-mag_bold_"+methodx+"1.nii.gz"
+        file2=directory+"/"+subject+"_ses-1_"+task+"_"+part+"_part-mag_bold_"+methodx+"2.nii.gz"
         print(f"""Loading epi file: {file1}""")
-        data_episeries_x1=load_img(file1)
-        data_episeries_x1=np.array(data_episeries_x1.dataobj)
-        shape1=data_episeries_x1.shape
+        epi_half1=apply_mask(file1,mask)
+        shape1=epi_half1.shape
         print(f"""Loading epi file: {file2}""")
-        data_episeries_x2=load_img(file2)
-        data_episeries_x2=np.array(data_episeries_x2.dataobj)
-        shape2=data_episeries_x2.shape
+        epi_half2=apply_mask(file2,mask)
+        shape2=epi_half2.shape
         if len(shape1) != len(shape2):
             raise ValueError(f"--ERROR-- data 1 has {len(shape1)} dimentions, while data 2 has {len(shape2)}")
-        # creatind a 2D array of voxels * time series
-        data_episeries_x1=np.reshape(data_episeries_x1,((prod(shape1[0:-1])),shape1[-1]))
-        data_episeries_x2=np.reshape(data_episeries_x2,((prod(shape2[0:-1])),shape2[-1]))
-        print("data reshaped")
-        data_mask=load_img(mask)
-        data_mask=np.array(data_mask.dataobj)
-        shape_mask=data_mask.shape
-        data_mask=np.reshape(data_mask,((prod(shape_mask[0:-1])),shape1[-1]))
-        # creating a mask of non zero values so only getting GM 
-        epi_mask=np.ma.masked_where(data_episeries_x1[:,0]!=0,data_episeries_x1[:,0])
-        print(f"""masked created for {sum(epi_mask.mask)} voxels""")
-        epi_half1=data_episeries_x1[epi_mask.mask,:]
-        epi_half2=data_episeries_x2[epi_mask.mask,:]
+        print(f"""Mask: {mask} contains {shape1[0]} voxels""")
+        epi_half1=np.transpose(epi_half1)
+        epi_half2=np.transpose(epi_half2)
     correlation_matrix_half1=np.corrcoef(epi_half1)
     print(f""" Functional connectivity for first half computed (pearson correlation) with shape {correlation_matrix_half1.shape}""")
     correlation_matrix_half2=np.corrcoef(epi_half2)
@@ -150,9 +137,13 @@ def reliability_analysis(subject,task,methodx,mask,sbref,directory=source_direct
         shape=plot_results.shape
         sbref_epi=load_img(sbref)
         #sbref_affine=sbref_epi.affine
-        plot_results_affined=Nifti1Image(plot_results.get_fdata(),affine=sbref_epi.affine)
+        plot_results_affined=Nifti1Image(plot_results.get_fdata(),affine=sbref_epi.affine, header=sbref_epi.header)
+        #plot_results_resampled=resample_to_img(plot_results,sbref_epi, interpolation='linear')
+        #plot_results_resampled2=resample_img(plot_results,target_affine=sbref_epi.affine,target_shape=sbref_epi.shape,interpolation='nearest', force_resample=True,copy_header=False)
         print("Created new nilearn object to visualize results")
-        brain_reliability=plot_epi(plot_results_affined,bg_img=sbref_epi,colorbar=True,draw_cross=False,cut_coords=((shape[0]//2),(shape[1]//2),(shape[2]//2)),cmap="inferno",vmin=0,vmax=0.5)
+        #brain_reliability=plot_epi(plot_results_affined,bg_img=sbref_epi,colorbar=True,draw_cross=False,cut_coords=((shape[0]//2),(shape[1]//2),(shape[2]//2)),cmap="inferno",vmin=0,vmax=0.5)
+        title=("Reliability map for "+subject+" "+methodx)
+        brain_reliability=plot_stat_map(plot_results_affined,sbref_epi,colorbar=True,draw_cross=False,title=title,cut_coords=((shape[0]//2),(shape[1]//2),(shape[2]//2)),cmap="inferno",vmin=0,vmax=0.5)
         brain_reliability.savefig(directory+"/"+subject+"_ses-1_"+task+"_"+part+"_functional_connectivity_"+methodx+split+"_reliability.png")
 
 #############################################################################################
