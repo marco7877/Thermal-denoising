@@ -1,7 +1,7 @@
 #!/bin/bash -l
 #SBATCH --partition=general
 #SBATCH --qos=regular
-#SBATCH --job-name=True_Resting_State_OC
+#SBATCH --job-name=Metrics_Resting_State_OC_residuals
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=10
 #SBATCH --time=00:30:00
@@ -26,9 +26,10 @@ methods=( "vanilla" "hydra" "nordic" "tmmpca" "mppca" )
 SE="False"
 counter=0
 TSNR="True"
-T2="False"
-R2="False"
-volume=""
+T2="True"
+R2="True"
+volume="2"
+residuals="True"
 for n_sub in "${list_subj[@]}" 
 do
 	for task in "${tasks[@]}"
@@ -137,5 +138,7 @@ if [[ $delta_t2 == "True" ]];then
 
 
 	ln -s ${mask} ${ln_mask}
-
-	if
+if
+if [[ $residuals == "True" ]];then
+	cp ${dir}/${subj}/ses-1/func_preproc_${method}/tedana_${task}_meicaresiduals${volume}/desc-optcom_bold.nii.gz ${target_timeseries}/${subj}_ses-1_${task}_residuals_part-mag_bold_${method}${volume}.nii.gz
+fi
