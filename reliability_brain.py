@@ -9,15 +9,15 @@ import numpy as np
 from math import prod
 from nilearn.masking import (
         apply_mask,
-        compute_epi_mask
+        unmask
         )
 from nilearn.plotting import (
         plot_epi,
         show)
-from nilearn.image import(
-        load_img,
-        new_img_like
+from nilearn.image import (
+        load_img
         )
+from nibabel import Nifti1Image
 from scipy.stats import pearsonr
 import matplotlib.pyplot as plt
 import os
@@ -61,7 +61,7 @@ tasks=['task-HABLA1200', 'task-HABLA1700']
 #####################################################################################
 #######################################################################################
 #######################################################################################
-def reliability_analysis(subject,task,methodx,mask,directory=source_directory,
+def reliability_analysis(subject,task,methodx,mask,sbref,directory=source_directory,
         split=True,plot=False,savecorr=True,save=True,hist=True,residuals=False):
 
     print(f"""Worth double checking! To understand output """)
@@ -76,28 +76,18 @@ def reliability_analysis(subject,task,methodx,mask,directory=source_directory,
         part="residuals"
     
     if split == True:
-        file1=directory+"/"+subject+"_ses-1_"+task+"_"+part+"_part-mag_bold_"+methodx+"_gm_union.nii.gz"
-        file2=directory+"/"+subject+"_ses-1_"+task+"_OC_part-mag_bold_"+methodx+"_gm_union.nii.gz"
-        #file2=file2.replace("analysis_timeSeries","analysis")
-        print(f"""Loading epi file: {file1}""")
-        data_episeries_x=load_img(file1)
-        data_episeries_x=np.array(data_episeries_x.dataobj)
-        shape=data_episeries_x.shape
-        data_mask=load_img(mask)
-        data_mask=np.array(data_mask.dataobj)
-        # creatind a 2D array of voxels * time series
-        data_episeries_x=np.reshape(data_episeries_x,((prod(shape[0:-1])),shape[-1]))
-        shape_mask=data_mask.shape
-        data_mask=np.reshape(data_mask,(prod(shape_mask),0))
+        file1=directory+"/"+subject+"_ses-1_"+task+"_"+part+"_part-mag_bold_"+methodx+".nii.gz"
+        print(f"""Loading epi file: {file1} while applying mask: {mask}""")
+        epi_mask=apply_mask(file1,mask)
+        epi_mask=np.transpose(epi_mask)
+        shape=epi_mask.shape
+        print(" Data loaded and masked!")
         # creating a mask of non zero values so only getting GM 
-        data_mask=np.ma.masked_where(data_mask[:,0]!=0,data_mask)
-        print("data reshaped")
-        # creating a mask of non zero values so only getting GM 
-        epi_mask=np.ma.masked_where(data_mask[:,0]!=0)
-        print(f"""masked created for {sum(epi_mask.mask)} voxels""")
+        
+        print(f"""Masked array has for {shape[0]} voxels""")
         # splitting volume in two 
-        epi_half1=data_episeries_x[epi_mask.mask,:(shape[-1]//2)]
-        epi_half2=data_episeries_x[epi_mask.mask,(shape[-1]//2):]
+        epi_half1=epi_mask[:,:(shape[-1]//2)]
+        epi_half2=epi_mask[:,(shape[-1]//2):]
         print(" Original epi time series divided in two")
     elif split == False:
         file1=directory+"/"+subject+"_ses-1_"+task+"_"+part+"_part-mag_bold_"+methodx+"1_gm_union.nii.gz"
@@ -120,13 +110,12 @@ def reliability_analysis(subject,task,methodx,mask,directory=source_directory,
         data_mask=load_img(mask)
         data_mask=np.array(data_mask.dataobj)
         shape_mask=data_mask.shape
-        data_mask=np.reshape(data_mask,(prod(shape_mask)))
+        data_mask=np.reshape(data_mask,((prod(shape_mask[0:-1])),shape1[-1]))
         # creating a mask of non zero values so only getting GM 
-        epi_mask=np.ma.masked_where(data_mask[:]!=0,data_mask)
+        epi_mask=np.ma.masked_where(data_episeries_x1[:,0]!=0,data_episeries_x1[:,0])
         print(f"""masked created for {sum(epi_mask.mask)} voxels""")
         epi_half1=data_episeries_x1[epi_mask.mask,:]
         epi_half2=data_episeries_x2[epi_mask.mask,:]
-        #TODO: finish false condition where reliability gets computed between independent halves
     correlation_matrix_half1=np.corrcoef(epi_half1)
     print(f""" Functional connectivity for first half computed (pearson correlation) with shape {correlation_matrix_half1.shape}""")
     correlation_matrix_half2=np.corrcoef(epi_half2)
@@ -156,16 +145,14 @@ def reliability_analysis(subject,task,methodx,mask,directory=source_directory,
         file_reliability=directory+"/"+subject+"_ses-1_"+task+"_"+part+"_functional_connectivity_"+methodx+split+"_reliability.csv"
         np.savetxt(file_reliability,reliability_vector,delimiter=",")
         print(f""" Reliability vector saved as {file_reliability}""")
-    reliability_target=np.zeros((prod(shape[:-1])))
-    reliability_target[epi_mask.mask]=reliability_vector**2
-    del reliability_vector
     if plot == True:
-        brain_space=np.reshape(reliability_target,(shape[:-1]))
-        print(f""" Moved results back to original space""")
-        ref_img=load_img(file2)
-        plot_results=new_img_like(ref_img,brain_space)
+        plot_results=unmask(reliability_vector,mask)
+        shape=plot_results.shape
+        sbref_epi=load_img(sbref)
+        #sbref_affine=sbref_epi.affine
+        plot_results_affined=Nifti1Image(plot_results.get_fdata(),affine=sbref_epi.affine)
         print("Created new nilearn object to visualize results")
-        brain_reliability=plot_epi(plot_results,colorbar=True,draw_cross=False,cut_coords=((shape[0]//2),(shape[1]//2),(shape[2]//2)),cmap="inferno",vmin=0,vmax=0.5)
+        brain_reliability=plot_epi(plot_results_affined,bg_img=sbref_epi,colorbar=True,draw_cross=False,cut_coords=((shape[0]//2),(shape[1]//2),(shape[2]//2)),cmap="inferno",vmin=0,vmax=0.5)
         brain_reliability.savefig(directory+"/"+subject+"_ses-1_"+task+"_"+part+"_functional_connectivity_"+methodx+split+"_reliability.png")
 
 #############################################################################################
@@ -174,11 +161,12 @@ def reliability_analysis(subject,task,methodx,mask,directory=source_directory,
 for subject in subjects:
     for task in tasks:
         for method in methods:
-            mask=source_directory+"/"+subject+"_ses-1_"+task+"_echo-1_part-mag_gm-alligned_mask-union.nii.gz"
+            mask=source_directory+"/"+subject+"_ses-1_"+task+"_echo-1_part-mag_gm_mask-union.nii.gz"
+            sbref="/bcbl/home/public/MarcoMotion/Resting_State/analysis/"+subject+"_ses-1_"+task+"_echo-1_part-mag_masked_sbref.nii.gz"
             try:
                 print(f"""############################################################################""")
                 print(f"""##########scatter_plotR2sPCT({subject},{task},{method})#######################""")
-                reliability_analysis(subject,task,method,mask,plot=True)
+                reliability_analysis(subject,task,method,mask,sbref,plot=True)
             except:
                 print(f"""############################################################################""")
                 print(f"""############################################################################""")
@@ -189,7 +177,7 @@ for subject in subjects:
             try:
                 print(f"""############################################################################""")
                 print(f"""##########scatter_plotR2sPCT({subject},{task},{method})#######################""")
-                reliability_analysis(subject,task,method,mask,plot=True, residuals=True)
+                reliability_analysis(subject,task,method,mask,sbref,plot=True, residuals=True)
             except:
                 print(f"""############################################################################""")
                 print(f"""############################################################################""")
@@ -200,7 +188,7 @@ for subject in subjects:
             try:
                 print(f"""############################################################################""")
                 print(f"""##########scatter_plotR2sPCT({subject},{task},{method})#######################""")
-                reliability_analysis(subject,task,method,mask,split=False,plot=True)
+                reliability_analysis(subject,task,method,mask,sbref,split=False,plot=True)
             except:
                 print(f"""############################################################################""")
                 print(f"""############################################################################""")
