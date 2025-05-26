@@ -1,21 +1,21 @@
 #!/bin/bash -l
 #SBATCH --partition=general
 #SBATCH --qos=regular
-#SBATCH --job-name=MEICA_OC_residuals_nordic
+#SBATCH --job-name=MEICA_OC_residuals
 #SBATCH --nodes=1
 #SBATCH --cpus-per-task=8
 #SBATCH --time=06:00:00
 #SBATCH --mem=30G
-#SBATCH --array=1-10
+#SBATCH --array=1-40
 #SBATCH --mail-type=ALL,ARRAY_TASKS
 #SBATCH --mail-user=mflores@bcbl.eu
 #SBATCH --error=/scratch/mflores/Resting_State/logs/%x_%a_%j.txt
 #SBATCH --output=/scratch/mflores/Resting_State/logs/%x_%a_%j.txt
 
-#module load Anaconda3
-#source activate /data/mflores/TEDANA/
+module load Anaconda3
+source activate /data/mflores/TEDANA/
 
-module load AFNI
+#module load AFNI
 
 
 echo "##################################################"
@@ -23,8 +23,8 @@ echo "MEICA JOB ${SLURM_ARRAY_TASK_ID}"
 echo "##################################################"
 tasks=( "task-HABLA1700" "task-HABLA1200" )
 list_subj=( "003" "001" "002" "004" "005" )
-#methods=(  "nordic" "tmmpca" "hydra" "mppca" )
-methods=( "nordic" )
+methods=(  "nordic" "tmmpca" "hydra" "mppca" )
+#methods=( "nordic" )
 volume=""
 counter=0
 tedana="True"
@@ -108,6 +108,7 @@ input_weights=/scratch/mflores/Resting_State/${subj}/ses-1/func_preproc_vanilla/
 	echo "##################################################"
 	echo "Making OC from residuals"
 	echo "##################################################"
+mask_preproc=/scratch/mflores/Resting_State/analysis_timeSeries/${subj}_ses-1_${task}_echo-1_part-mag_brain_mask-union.nii.gz
 part_mag1=${input}/${subj}_ses-1_${task}_echo-1_part-mag_${part}_${method}_mcf_al${ext}
 part_mag2=${input}/${subj}_ses-1_${task}_echo-2_part-mag_${part}_${method}_mcf_al${ext}
 part_mag3=${input}/${subj}_ses-1_${task}_echo-3_part-mag_${part}_${method}_mcf_al${ext}
@@ -117,7 +118,7 @@ weight_mag2=${input_weights}/${subj}_${task}_OC_echo-2_weight.nii.gz
 weight_mag3=${input_weights}/${subj}_${task}_OC_echo-3_weight.nii.gz
 weight_mag4=${input_weights}/${subj}_${task}_OC_echo-4_weight.nii.gz
 
-3dcalc -a ${part_mag1} -b ${part_mag2} -c ${part_mag3} -d ${part_mag4} -e ${weight_mag1} -f ${weight_mag2} -g ${weight_mag3} -h ${weight_mag4} -i ${mask_preproc}  -expr '(a*e+b*f+c*g+d*h)*i' -prefix /scratch/mflores/Resting_State/${subj}/ses-1/func_preproc_${method}/tedana_${task}_${tree}${part}${volume}/desc-optcom_bold.nii.gz -overwrite 
+3dcalc -a ${part_mag1} -b ${part_mag2} -c ${part_mag3} -d ${part_mag4} -e ${weight_mag1} -f ${weight_mag2} -g ${weight_mag3} -h ${weight_mag4} -m ${mask_preproc}  -expr '(a*e+b*f+c*g+d*h)*m' -prefix /scratch/mflores/Resting_State/${subj}/ses-1/func_preproc_${method}/tedana_${task}_${tree}${part}${volume}/desc-optcom_bold.nii.gz -overwrite 
 	else
 
 if [[ $tedana == "True" ]];then
@@ -125,7 +126,7 @@ if [[ $tedana == "True" ]];then
 	echo "tedana -d ${mag} -e ${echo_times} --out-dir ${out_dir} --tree ${tree} --verbose --debug True --mask ${mask_preproc}  --overwrite"
 	echo "##################################################"
 
-	tedana -d ${mag} -e ${echo_times} --out-dir ${out_dir} --tree ${tree} --verbose --debug --mask ${mask_preproc} --masktype none --fittype loglin ${t2}--overwrite
+	tedana -d ${mag} -e ${echo_times} --out-dir ${out_dir} --tree ${tree} --verbose --debug --mask ${mask_preproc} --masktype none --fittype loglin --overwrite
 
 	rmdir --ignore-fail-on-non-empty ${out_dir}
 fi

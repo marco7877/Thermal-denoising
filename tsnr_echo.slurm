@@ -25,10 +25,10 @@ methods=( "vanilla" "hydra" "nordic" "tmmpca" "mppca" )
 #methods=( "nordic" )
 SE="False"
 counter=0
-TSNR="True"
-T2="True"
-R2="True"
-volume="2"
+TSNR="False"
+T2="False"
+R2="False"
+volume=""
 residuals="True"
 for n_sub in "${list_subj[@]}" 
 do
@@ -92,18 +92,18 @@ else
 		cp ${dir}/${subj}/ses-1/func_preproc_${method}/tedana_${task}_meicabold${volume}/S0map.nii.gz ${target_T2}/${subj}_ses-1_${task}_S0_part-mag_bold_${method}${volume}.nii.gz
 		echo "calculating signal percent change"
 		3dcalc -a ${dir}/${subj}/ses-1/func_preproc_vanilla/tedana_${task}_meicabold${volume}/S0map.nii.gz -b ${dir}/${subj}/ses-1/func_preproc_${method}/tedana_${task}_meicabold${volume}/S0map.nii.gz -expr '(b-a)/a' -prefix ${target_T2}/${subj}_ses-1_${task}_S0spc_part-mag_bold_${method}${volume}.nii.gz -overwrite
-		if [[ $R2 == "True" ]];then
+	fi
+	if [[ $R2 == "True" ]];then
 
-			3dcalc -a ${dir}/${subj}/ses-1/func_preproc_${method}/tedana_${task}_meicabold${volume}/t2smap/T2starmap.nii.gz -expr "(1/a)" -prefix ${target_T2}/${subj}_ses-1_${task}_R2_part-mag_bold_${method}${volume}.nii.gz  -overwrite 
+		3dcalc -a ${dir}/${subj}/ses-1/func_preproc_${method}/tedana_${task}_meicabold${volume}/t2smap/T2starmap.nii.gz -expr "(1/a)" -prefix ${target_T2}/${subj}_ses-1_${task}_R2_part-mag_bold_${method}${volume}.nii.gz  -overwrite 
 
-			3dTstat -mean -prefix ${target_T2}/${subj}_ses-1_${task}_R2mean_part-mag_bold_${method}${volume}.nii.gz ${target_T2}/${subj}_ses-1_${task}_R2_part-mag_bold_${method}${volume}.nii.gz  -overwrite 
+		3dTstat -mean -prefix ${target_T2}/${subj}_ses-1_${task}_R2mean_part-mag_bold_${method}${volume}.nii.gz ${target_T2}/${subj}_ses-1_${task}_R2_part-mag_bold_${method}${volume}.nii.gz  -overwrite 
 
-			3dcalc -a ${target_T2}/${subj}_ses-1_${task}_R2_part-mag_bold_${method}${volume}.nii.gz -b ${target_T2}/${subj}_ses-1_${task}_R2mean_part-mag_bold_${method}${volume}.nii.gz -expr '(a-b)' -prefix ${target_T2}/${subj}_ses-1_${task}_R2spc_part-mag_bold_${method}${volume}.nii.gz -overwrite
-		fi
-
+		3dcalc -a ${target_T2}/${subj}_ses-1_${task}_R2_part-mag_bold_${method}${volume}.nii.gz -b ${target_T2}/${subj}_ses-1_${task}_R2mean_part-mag_bold_${method}${volume}.nii.gz -expr '(a-b)' -prefix ${target_T2}/${subj}_ses-1_${task}_R2spc_part-mag_bold_${method}${volume}.nii.gz -overwrite
 	fi
 
 fi
+
 echo "My reference part_mag is: /${part_mag}"
 mask=${dir}/${subj}/ses-1/func_preproc_vanilla/${subj}_ses-1_${task}_echo-1_part-mag_brain_mask.nii.gz
 ln_mask=${target}/${subj}_ses-1_${task}_echo-1_part-mag_brain_mask.nii.gz
@@ -138,7 +138,8 @@ if [[ $delta_t2 == "True" ]];then
 
 
 	ln -s ${mask} ${ln_mask}
-if
+fi
+
 if [[ $residuals == "True" ]];then
 	cp ${dir}/${subj}/ses-1/func_preproc_${method}/tedana_${task}_meicaresiduals${volume}/desc-optcom_bold.nii.gz ${target_timeseries}/${subj}_ses-1_${task}_residuals_part-mag_bold_${method}${volume}.nii.gz
 fi
