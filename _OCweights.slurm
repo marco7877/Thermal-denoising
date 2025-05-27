@@ -70,38 +70,38 @@ fi
 if [[ ${task} = "task-HABLA1700" ]]
 then
 	echo "-------------------------------------------------------------"
-	echo "3dcalc -a ${input}/T2starmap.nii.gz -expr '(13.4*(exp(13.4/a)*-1))/((13.4*(exp(13.4/a)*-1)+(36.1*(exp(36.1/a)*-1)+(58.8*(exp(58.8/a)*-1)+(81.5*(exp(81.5/a)*-1))))))' -prefix ${input}/${subj}_${task}_OC_echo-1_weight.nii.gz -overwrite"
-	3dcalc -a ${input}/T2starmap.nii.gz -expr '(13.4*(exp(13.4/a)*-1))/((13.4*(exp(13.4/a)*-1)+(36.1*(exp(36.1/a)*-1)+(58.8*(exp(58.8/a)*-1)+(81.5*(exp(81.5/a)*-1))))))' -prefix ${input}/${subj}_${task}_OC_echo-1_weight.nii.gz -overwrite
+	echo "3dcalc -a ${input}/T2starmap.nii.gz -expr '(13.4*(exp(-13.4/a)))/((13.4*(exp(-13.4/a))+(36.1*(exp(-36.1/a))+(58.8*(exp(-58.8/a))+(81.5*(exp(-81.5/a)))))))' -prefix ${input}/${subj}_${task}_OC_echo-1_weight.nii.gz -overwrite"
+	3dcalc -a ${input}/T2starmap.nii.gz -expr '(13.4*(exp(-13.4/a)))/((13.4*(exp(-13.4/a))+(36.1*(exp(-36.1/a))+(58.8*(exp(-58.8/a))+(81.5*(exp(-81.5/a)))))))' -prefix ${input}/${subj}_${task}_OC_echo-1_weight.nii.gz -overwrite
 	
 	echo "-------------------------------------------------------------"
-	echo "3dcalc -a ${input}/T2starmap.nii.gz -expr '(36.1*(exp(36.1/a)*-1))/((13.4*(exp(13.4/a)*-1)+(36.1*(exp(36.1/a)*-1)+(58.8*(exp(58.8/a)*-1)+(81.5*(exp(81.5/a)*-1))))))' -prefix ${input}/${subj}_${task}_OC_echo-2_weight.nii.gz -overwrite"
-	3dcalc -a ${input}/T2starmap.nii.gz -expr '(36.1*(exp(36.1/a)*-1))/((13.4*(exp(13.4/a)*-1)+(36.1*(exp(36.1/a)*-1)+(58.8*(exp(58.8/a)*-1)+(81.5*(exp(81.5/a)*-1))))))' -prefix ${input}/${subj}_${task}_OC_echo-2_weight.nii.gz -overwrite
+	echo "3dcalc -a ${input}/T2starmap.nii.gz -expr '(36.1*(exp(-36.1/a)))/((13.4*(exp(-13.4/a))+(36.1*(exp(-36.1/a))+(58.8*(exp(-58.8/a))+(81.5*(exp(-81.5/a)))))))' -prefix ${input}/${subj}_${task}_OC_echo-2_weight.nii.gz -overwrite"
+	3dcalc -a ${input}/T2starmap.nii.gz -expr '(36.1*(exp(-36.1/a)))/((13.4*(exp(-13.4/a))+(36.1*(exp(-36.1/a))+(58.8*(exp(-58.8/a))+(81.5*(exp(-81.5/a)))))))' -prefix ${input}/${subj}_${task}_OC_echo-2_weight.nii.gz -overwrite
 	
 	echo "-------------------------------------------------------------"
-	echo "3dcalc -a ${input}/T2starmap.nii.gz -expr '(58.8*(exp(58.8/a)*-1))/((13.4*(exp(13.4/a)*-1)+(36.1*(exp(36.1/a)*-1)+(58.8*(exp(58.8/a)*-1)+(81.5*(exp(81.5/a)*-1))))))' -prefix ${input}/${subj}_${task}_OC_echo-3_weight.nii.gz -overwrite"
-	3dcalc -a ${input}/T2starmap.nii.gz -expr '(58.8*(exp(58.8/a)*-1))/((13.4*(exp(13.4/a)*-1)+(36.1*(exp(36.1/a)*-1)+(58.8*(exp(58.8/a)*-1)+(81.5*(exp(81.5/a)*-1))))))' -prefix ${input}/${subj}_${task}_OC_echo-3_weight.nii.gz -overwrite
+	echo "3dcalc -a ${input}/T2starmap.nii.gz -expr '(58.8*(exp(-58.8/a)))/((13.4*(exp(-13.4/a))+(36.1*(exp(-36.1/a))+(58.8*(exp(-58.8/a))+(81.5*(exp(-81.5/a)))))))' -prefix ${input}/${subj}_${task}_OC_echo-3_weight.nii.gz -overwrite"
+	3dcalc -a ${input}/T2starmap.nii.gz -expr '(58.8*(exp(-58.8/a)))/((13.4*(exp(-13.4/a))+(36.1*(exp(-36.1/a))+(58.8*(exp(-58.8/a))+(81.5*(exp(-81.5/a)))))))' -prefix ${input}/${subj}_${task}_OC_echo-3_weight.nii.gz -overwrite
 	
 	echo "-------------------------------------------------------------"
-	echo "3dcalc -a ${input}/T2starmap.nii.gz -expr '(81.5*(exp(81.5/a)*-1))/((13.4*(exp(13.4/a)*-1)+(36.1*(exp(36.1/a)*-1)+(58.8*(exp(58.8/a)*-1)+(81.5*(exp(81.5/a)*-1))))))' -prefix ${input}/${subj}_${task}_OC_echo-4_weight.nii.gz -overwrite"
-	3dcalc -a ${input}/T2starmap.nii.gz -expr '(81.5*(exp(81.5/a)*-1))/((13.4*(exp(13.4/a)*-1)+(36.1*(exp(36.1/a)*-1)+(58.8*(exp(58.8/a)*-1)+(81.5*(exp(81.5/a)*-1))))))' -prefix ${input}/${subj}_${task}_OC_echo-4_weight.nii.gz -overwrite
+	echo "3dcalc -a ${input}/T2starmap.nii.gz -expr '(81.5*(exp(-81.5/a)))/((13.4*(exp(-13.4/a))+(36.1*(exp(-36.1/a))+(58.8*(exp(-58.8/a))+(81.5*(exp(-81.5/a)))))))' -prefix ${input}/${subj}_${task}_OC_echo-4_weight.nii.gz -overwrite"
+	3dcalc -a ${input}/T2starmap.nii.gz -expr '(81.5*(exp(-81.5/a)))/((13.4*(exp(-13.4/a))+(36.1*(exp(-36.1/a))+(58.8*(exp(-58.8/a))+(81.5*(exp(-81.5/a)))))))' -prefix ${input}/${subj}_${task}_OC_echo-4_weight.nii.gz -overwrite
 
 elif [[ ${task} = "task-HABLA1200" ]]
 then
 	echo_times="11.2 28.1 45 61.9"
 	
 	echo "-------------------------------------------------------------"
-	echo "3dcalc -a ${input}/T2starmap.nii.gz -expr '(11.2*(exp(11.2/a)*-1))/((11.2*(exp(11.2/a)*-1)+(28.1*(exp(28.1/a)*-1)+(45*(exp(45/a)*-1)+(61.9*(exp(61.9/a)*-1))))))' -prefix ${input}/${subj}_${task}_OC_echo-1_weight.nii.gz -overwrite"
-	3dcalc -a ${input}/T2starmap.nii.gz -expr '(11.2*(exp(11.2/a)*-1))/((11.2*(exp(11.2/a)*-1)+(28.1*(exp(28.1/a)*-1)+(45*(exp(45/a)*-1)+(61.9*(exp(61.9/a)*-1))))))' -prefix ${input}/${subj}_${task}_OC_echo-1_weight.nii.gz -overwrite
+	echo "3dcalc -a ${input}/T2starmap.nii.gz -expr '(11.2*(exp(-11.2/a)))/((11.2*(exp(-11.2/a))+(28.1*(exp(-28.1/a))+(45*(exp(-45/a))+(61.9*(exp(-61.9/a)))))))' -prefix ${input}/${subj}_${task}_OC_echo-1_weight.nii.gz -overwrite"
+	3dcalc -a ${input}/T2starmap.nii.gz -expr '(11.2*(exp(-11.2/a)))/((11.2*(exp(-11.2/a))+(28.1*(exp(-28.1/a))+(45*(exp(-45/a))+(61.9*(exp(-61.9/a)))))))' -prefix ${input}/${subj}_${task}_OC_echo-1_weight.nii.gz -overwrite
 	
 	echo "-------------------------------------------------------------"
-	echo "3dcalc -a ${input}/T2starmap.nii.gz -expr '(28.1*(exp(28.1/a)*-1))/((11.2*(exp(11.2/a)*-1)+(28.1*(exp(28.1/a)*-1)+(45*(exp(45/a)*-1)+(61.9*(exp(61.9/a)*-1))))))' -prefix ${input}/${subj}_${task}_OC_echo-2_weight.nii.gz -overwrite"
-	3dcalc -a ${input}/T2starmap.nii.gz -expr '(28.1*(exp(28.1/a)*-1))/((11.2*(exp(11.2/a)*-1)+(28.1*(exp(28.1/a)*-1)+(45*(exp(45/a)*-1)+(61.9*(exp(61.9/a)*-1))))))' -prefix ${input}/${subj}_${task}_OC_echo-2_weight.nii.gz -overwrite
+	echo "3dcalc -a ${input}/T2starmap.nii.gz -expr '(28.1*(exp(-28.1/a)))/((11.2*(exp(-11.2/a))+(28.1*(exp(-28.1/a))+(45*(exp(-45/a))+(61.9*(exp(-61.9/a)))))))' -prefix ${input}/${subj}_${task}_OC_echo-2_weight.nii.gz -overwrite"
+	3dcalc -a ${input}/T2starmap.nii.gz -expr '(28.1*(exp(-28.1/a)))/((11.2*(exp(-11.2/a))+(28.1*(exp(-28.1/a))+(45*(exp(-45/a))+(61.9*(exp(-61.9/a)))))))' -prefix ${input}/${subj}_${task}_OC_echo-2_weight.nii.gz -overwrite
 	
 	echo "-------------------------------------------------------------"
-	echo "3dcalc -a ${input}/T2starmap.nii.gz -expr '(45*(exp(45/a)*-1))/((11.2*(exp(11.2/a)*-1)+(28.1*(exp(28.1/a)*-1)+(45*(exp(45/a)*-1)+(61.9*(exp(61.9/a)*-1))))))' -prefix ${input}/${subj}_${task}_OC_echo-3_weight.nii.gz -overwrite"
-	3dcalc -a ${input}/T2starmap.nii.gz -expr '(45*(exp(45/a)*-1))/((11.2*(exp(11.2/a)*-1)+(28.1*(exp(28.1/a)*-1)+(45*(exp(45/a)*-1)+(61.9*(exp(61.9/a)*-1))))))' -prefix ${input}/${subj}_${task}_OC_echo-3_weight.nii.gz -overwrite
+	echo "3dcalc -a ${input}/T2starmap.nii.gz -expr '(45*(exp(-45/a)))/((11.2*(exp(-11.2/a))+(28.1*(exp(-28.1/a))+(45*(exp(-45/a))+(61.9*(exp(-61.9/a)))))))' -prefix ${input}/${subj}_${task}_OC_echo-3_weight.nii.gz -overwrite"
+	3dcalc -a ${input}/T2starmap.nii.gz -expr '(45*(exp(-45/a)))/((11.2*(exp(-11.2/a))+(28.1*(exp(-28.1/a))+(45*(exp(-45/a))+(61.9*(exp(-61.9/a)))))))' -prefix ${input}/${subj}_${task}_OC_echo-3_weight.nii.gz -overwrite
 	
 	echo "-------------------------------------------------------------"
-	echo "3dcalc -a ${input}/T2starmap.nii.gz -expr '(61.9*(exp(61.9/a)*-1))/((11.2*(exp(11.2/a)*-1)+(28.1*(exp(28.1/a)*-1)+(45*(exp(45/a)*-1)+(61.9*(exp(61.9/a)*-1))))))' -prefix ${input}/${subj}_${task}_OC_echo-4_weight.nii.gz -overwrite"
-	3dcalc -a ${input}/T2starmap.nii.gz -expr '(61.9*(exp(61.9/a)*-1))/((11.2*(exp(11.2/a)*-1)+(28.1*(exp(28.1/a)*-1)+(45*(exp(45/a)*-1)+(61.9*(exp(61.9/a)*-1))))))' -prefix ${input}/${subj}_${task}_OC_echo-4_weight.nii.gz -overwrite
+	echo "3dcalc -a ${input}/T2starmap.nii.gz -expr '(61.9*(exp(-61.9/a)))/((11.2*(exp(-11.2/a))+(28.1*(exp(-28.1/a))+(45*(exp(-45/a))+(61.9*(exp(-61.9/a)))))))' -prefix ${input}/${subj}_${task}_OC_echo-4_weight.nii.gz -overwrite"
+	3dcalc -a ${input}/T2starmap.nii.gz -expr '(61.9*(exp(-61.9/a)))/((11.2*(exp(-11.2/a))+(28.1*(exp(-28.1/a))+(45*(exp(-45/a))+(61.9*(exp(-61.9/a)))))))' -prefix ${input}/${subj}_${task}_OC_echo-4_weight.nii.gz -overwrite
 fi
