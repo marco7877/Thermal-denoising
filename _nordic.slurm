@@ -49,7 +49,7 @@ subj=sub-${n_sub}
 # define folders 
 preproc=func_preproc_${method}
 repo=/home/mflores/scripts
-origin=/scratch/mflores/Resting_State/${subj}/ses-1/${preproc}
+origin=/scratch/mflores/Resting_State/${subj}/ses-1/func_preproc_vanilla
 output=/scratch/mflores/Resting_State/${subj}/ses-1/${preproc}
 halves=True
 noise=3 # number of noise volumes
@@ -82,11 +82,11 @@ if [[ $halves == False ]];then
 
 		temp_nordic=$(mktemp ${output}/gctmp/nordicXXXXXX.m)
 
-		part_mag=${origin}/${subj}_ses-1_${task}_echo-${n_echo}_part-mag_bold_${method}_dsd
+		part_mag=${output}/${subj}_ses-1_${task}_echo-${n_echo}_part-mag_bold_${method}_dsd
 
 		part_mag_out=${subj}_ses-1_${task}_echo-${n_echo}_part-mag_bold_${method}N
 
-		part_phase=${origin}/${subj}_ses-1_${task}_echo-${n_echo}_part-phase_bold_${method}_dsd
+		part_phase=${output}/${subj}_ses-1_${task}_echo-${n_echo}_part-phase_bold_${method}_dsd
 
 		echo "##################################################"
 		echo "##################################################"
@@ -129,6 +129,11 @@ if [[ $halves == False ]];then
 			echo "removing noise volumes to ${part_mag_thrm}.nii"
 
 			3dcalc -a "${part_mag_thrm}.nii.gz[0..${vol}]" -expr 'a' -prefix ${part_mag_thrm_trimmed}.nii.gz -overwrite
+			if [[ $make_residualds == "True" ]]; then
+				echo "Making residuals between vanilla and denoised volumes"
+				3dcalc -a ${output}/${subj}_ses-1_${task}_echo-${n_echo}_part-mag_bold_${method}.nii.gz -b ${origin}/${subj}_ses-1_${task}_echo-${n_echo}_part-mag_bold_vanilla.nii.gz -expr '(b-a)' -prefix ${output}/${subj}_ses-1_${task}_echo-${n_echo}_part-mag_residuals_${method}.nii.gz
+			fi
+
 
 			echo "******************************************************************************"
 			echo "deleting  temporal ${part_mag_thrm}"
@@ -137,7 +142,7 @@ if [[ $halves == False ]];then
 	done	
 else
 
-	volumes=$(3dinfo -nvi ${origin}/${subj}_ses-1_${task}_echo-1_part-mag_bold_${method}_dsd.nii.gz)
+	volumes=$(3dinfo -nvi ${output}/${subj}_ses-1_${task}_echo-1_part-mag_bold_${method}_dsd.nii.gz)
 	noise_vol=$(($volumes-$(($noise-1))))
 	vol_half=$(($noise_vol/2))
 	echo "Unsplitted time series has ${volumes} volumes"
@@ -148,25 +153,25 @@ else
 	do
 
 
-		part_mag="${origin}/${subj}_ses-1_${task}_echo-${n_echo}_part-mag_bold_${method}_dsd"
+		part_mag="${output}/${subj}_ses-1_${task}_echo-${n_echo}_part-mag_bold_${method}_dsd"
 
-		part_mag_half1="${origin}/${subj}_ses-1_${task}_echo-${n_echo}_part-mag_bold_${method}_dsd1"
+		part_mag_half1="${output}/${subj}_ses-1_${task}_echo-${n_echo}_part-mag_bold_${method}_dsd1"
 
-		part_mag_half2="${origin}/${subj}_ses-1_${task}_echo-${n_echo}_part-mag_bold_${method}_dsd2"
+		part_mag_half2="${output}/${subj}_ses-1_${task}_echo-${n_echo}_part-mag_bold_${method}_dsd2"
 
 		part_mag_out1="${subj}_ses-1_${task}_echo-${n_echo}_part-mag_bold_${method}N1"
 
 		part_mag_out2="${subj}_ses-1_${task}_echo-${n_echo}_part-mag_bold_${method}N2"
 
-		part_phase="${origin}/${subj}_ses-1_${task}_echo-${n_echo}_part-phase_bold_${method}_dsd"
+		part_phase="${output}/${subj}_ses-1_${task}_echo-${n_echo}_part-phase_bold_${method}_dsd"
 
-		part_phase_half1="${origin}/${subj}_ses-1_${task}_echo-${n_echo}_part-phase_bold_${method}_dsd1"
+		part_phase_half1="${output}/${subj}_ses-1_${task}_echo-${n_echo}_part-phase_bold_${method}_dsd1"
 
-		part_phase_half2="${origin}/${subj}_ses-1_${task}_echo-${n_echo}_part-phase_bold_${method}_dsd2"
+		part_phase_half2="${output}/${subj}_ses-1_${task}_echo-${n_echo}_part-phase_bold_${method}_dsd2"
 
-		noise_mag="${origin}/${subj}_ses-1_${task}_echo-${n_echo}_part-mag_noise_${method}"
+		noise_mag="${output}/${subj}_ses-1_${task}_echo-${n_echo}_part-mag_noise_${method}"
 
-		noise_phase="${origin}/${subj}_ses-1_${task}_echo-${n_echo}_part-phase_noise_${method}"
+		noise_phase="${output}/${subj}_ses-1_${task}_echo-${n_echo}_part-phase_noise_${method}"
 
 		echo "Cutting volumes in halves"
 
@@ -231,7 +236,13 @@ else
 
 			echo "******************************************************************************"
 			o=$((i+1))
-			3dcalc -a "${origin}/${outs[$i]}.nii.gz[0..$vol]" -expr "a"  -prefix "${origin}/${subj}_ses-1_${task}_echo-${n_echo}_part-mag_bold_${method}${o}.nii.gz" -overwrite
+			3dcalc -a "${output}/${outs[$i]}.nii.gz[0..$vol]" -expr "a"  -prefix "${output}/${subj}_ses-1_${task}_echo-${n_echo}_part-mag_bold_${method}${o}.nii.gz" -overwrite
+			if [[ $make_residualds == "True" ]]; then
+				echo "Making residuals between vanilla and denoised volumes"
+				3dcalc -a ${output}/${subj}_ses-1_${task}_echo-${n_echo}_part-mag_bold_${method}${o}.nii.gz -b ${origin}/${subj}_ses-1_${task}_echo-${n_echo}_part-mag_bold_vanilla${o}.nii.gz -expr '(b-a)' -prefix ${output}/${subj}_ses-1_${task}_echo-${n_echo}_part-mag_residuals_${method}${o}.nii.gz
+			fi
+
+
 		done
 	done
 fi
