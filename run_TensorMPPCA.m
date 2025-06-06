@@ -2,7 +2,7 @@ addpath("/home/mflores/Tensor-MP-PCA/");
 sub="SUBJECT";
 disp(append("Analizing subject: ",sub));
 
-file=append("/scratch/mflores/Resting_State/",sub,"/ses-1/func_preproc_tmmpca/",sub,"_ses-1_TASK_echo-");
+file=append("/data/HABLA/Resting_State/",sub,"/ses-1/func_preproc_tmmpca/",sub,"_ses-1_TASK_echo-");
 part="_part-mag_bold_tmmpca_dsd";
 ext="HALF.nii.gz";
 mag1=append(file,"1",part,ext);
