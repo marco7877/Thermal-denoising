@@ -24,11 +24,12 @@ nii2_info=niftiinfo(mag2);
 nii3_info=niftiinfo(mag3);
 nii4_info=niftiinfo(mag4);
 % denoising data 
-[nii1_denoised,Sigma1]=MPdenoising(nii1,[],[4 4 4],["full"])
-[nii2_denoised,Sigma2]=MPdenoising(nii2,[],[4 4 4],["full"])
-[nii3_denoised,Sigma3]=MPdenoising(nii3,[],[4 4 4],["full"])
-[nii4_denoised,Sigma4]=MPdenoising(nii4,[],[4 4 4],["full"])
+[nii1_denoised,Sigma1]=MPdenoising(nii1,[],[5 5 5],["full"])
+[nii2_denoised,Sigma2]=MPdenoising(nii2,[],[5 5 5],["full"])
+[nii3_denoised,Sigma3]=MPdenoising(nii3,[],[5 5 5],["full"])
+[nii4_denoised,Sigma4]=MPdenoising(nii4,[],[5 5 5],["full"])
 % saving denoised files
+file=strrep(file,"/data/HABLA/","/scratch/mflores/");
 disp(append("Saving denoised matrix as NIFTI: ",file,"1",part_out,ext));
 niftiwrite(nii1_denoised,append(file,"1",part_out,ext),nii1_info);
 disp(append("Saving denoised matrix as NIFTI: ",file,"2",part_out,ext));
