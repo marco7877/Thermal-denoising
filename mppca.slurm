@@ -50,7 +50,7 @@ else
 fi
 for half in "${halves[@]}"
 do
-mppca="/home/mflores/scripts/mppca.m"
+mppca="/home/mflores/Thermal-denoising/mppca.m"
 temp_mppca=$(mktemp ~/mppcaXXXXXX.m)
 origin=/scratch/mflores/Resting_State/${subj}/ses-1/func_preproc_vanilla
 output=/scratch/mflores/Resting_State/${subj}/ses-1/func_preproc_${method}
