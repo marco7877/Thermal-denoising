@@ -29,7 +29,7 @@ disp(append("Creating tensor from magnitude parts"));
 tensor_nii=cat(5,nii1,nii2,nii3,nii4);
 %running tensor MP-PCA
 disp(append("Denoising magnitude valumes from subject: ",sub));
-[denoised,Sigma2,P,SNR_gain]=denoise_recursive_tensor(tensor_nii, [4 4], indices={1:3 4 5});
+[denoised,Sigma2,P,SNR_gain]=denoise_recursive_tensor(tensor_nii, [5 5], indices={1:3 4 5});
 % deconcatenating nifti files
 disp("Denoising finishes");
 nii1_denoised=denoised(:,:,:,:,1);
@@ -39,6 +39,7 @@ nii4_denoised=denoised(:,:,:,:,4);
 %saving denoised parts
 %file=strrep(file,"_dsd","");
 part_out="_part-mag_bold_tmmpca";
+file=strrep(file,"/data/HABLA/","/scratch/mflores/");
 disp(append("Saving denoised matrix as NIFTI: ",file,"1",part_out,ext));
 niftiwrite(nii1_denoised,append(file,"1",part_out,ext),nii1_info);
 disp(append("Saving denoised matrix as NIFTI: ",file,"2",part_out,ext));
