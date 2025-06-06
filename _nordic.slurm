@@ -74,7 +74,7 @@ echo "##################################################"
 mkdir -p ${output}/gctmp # define temporary folder to save temporary matlab scripts 
 
 # TODO: Change nordic.m to return compressed files them)
-list_echoes=("1" "2" "3" "4")
+list_echoes=($(seq 1 4))
 echo "******************************************************************************"
 if [[ $halves == False ]];then
 
