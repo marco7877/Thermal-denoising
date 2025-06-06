@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH --partition=general
 #SBATCH --qos=regular
-#SBATCH --job-name=NORDIC_halves
+#SBATCH --job-name=NORDIC_halves_residuals
 #SBATCH --nodes=1
 #SBATCH --cpus-per-task=16
 #SBATCH --time=3:00:00
@@ -24,7 +24,8 @@ echo "##################################################"
 tasks=( "task-HABLA1200" "task-HABLA1700" )
 #runs=( "1" "2" )
 list_subj=( "001" "002" "003" "004" "005" )
-
+make_residuals="True"
+halves="True"
 counter=0
 for n_sub in "${list_subj[@]}" 
 do
@@ -51,7 +52,7 @@ preproc=func_preproc_${method}
 repo=/home/mflores/scripts
 origin=/scratch/mflores/Resting_State/${subj}/ses-1/func_preproc_vanilla
 output=/scratch/mflores/Resting_State/${subj}/ses-1/${preproc}
-halves=True
+
 noise=3 # number of noise volumes
 magn_only=0
 
@@ -129,9 +130,9 @@ if [[ $halves == False ]];then
 			echo "removing noise volumes to ${part_mag_thrm}.nii"
 
 			3dcalc -a "${part_mag_thrm}.nii.gz[0..${vol}]" -expr 'a' -prefix ${part_mag_thrm_trimmed}.nii.gz -overwrite
-			if [[ $make_residualds == "True" ]]; then
+			if [[ $make_residuals == "True" ]]; then
 				echo "Making residuals between vanilla and denoised volumes"
-				3dcalc -a ${output}/${subj}_ses-1_${task}_echo-${n_echo}_part-mag_bold_${method}.nii.gz -b ${origin}/${subj}_ses-1_${task}_echo-${n_echo}_part-mag_bold_vanilla.nii.gz -expr '(b-a)' -prefix ${output}/${subj}_ses-1_${task}_echo-${n_echo}_part-mag_residuals_${method}.nii.gz
+				3dcalc -a ${output}/${subj}_ses-1_${task}_echo-${n_echo}_part-mag_bold_${method}.nii.gz -b ${origin}/${subj}_ses-1_${task}_echo-${n_echo}_part-mag_bold_vanilla.nii.gz -expr '(b-a)' -prefix ${output}/${subj}_ses-1_${task}_echo-${n_echo}_part-mag_residuals_${method}.nii.gz -overwrite
 			fi
 
 
@@ -144,6 +145,7 @@ else
 
 	volumes=$(3dinfo -nvi ${output}/${subj}_ses-1_${task}_echo-1_part-mag_bold_${method}_dsd.nii.gz)
 	noise_vol=$(($volumes-$(($noise-1))))
+	signal_vol=$(($noise_vol-1))
 	vol_half=$(($noise_vol/2))
 	echo "Unsplitted time series has ${volumes} volumes"
 	echo "After taking out noise scans we have ${noise_vol} volumes"
@@ -189,7 +191,7 @@ else
 
 		3dTcat -prefix ${part_mag_half1}.nii.gz ${part_mag_half1}u.nii.gz "${noise_mag}.nii.gz[1]" -overwrite
 
-		3dcalc -a "${part_mag}.nii.gz[${vol_half}..${noise_vol}]" -expr "a" -prefix ${part_mag_half2}u.nii.gz -overwrite
+		3dcalc -a "${part_mag}.nii.gz[${vol_half}..${signal_vol}]" -expr "a" -prefix ${part_mag_half2}u.nii.gz -overwrite
 
 		3dTcat -prefix ${part_mag_half2}.nii.gz ${part_mag_half2}u.nii.gz "${noise_mag}.nii.gz[2]" -overwrite
 
@@ -198,7 +200,7 @@ else
 
 		3dTcat -prefix ${part_phase_half1}.nii.gz ${part_phase_half1}u.nii.gz "${noise_phase}.nii.gz[1]" -overwrite
 
-		3dcalc -a "${part_phase}.nii.gz[${vol_half}..$]" -expr "a" -prefix ${part_phase_half2}u.nii.gz -overwrite
+		3dcalc -a "${part_phase}.nii.gz[${vol_half}..${signal_vol}]" -expr "a" -prefix ${part_phase_half2}u.nii.gz -overwrite
 
 		3dTcat -prefix ${part_phase_half2}.nii.gz ${part_phase_half2}u.nii.gz "${noise_phase}.nii.gz[2]" -overwrite
 
@@ -237,9 +239,9 @@ else
 			echo "******************************************************************************"
 			o=$((i+1))
 			3dcalc -a "${output}/${outs[$i]}.nii.gz[0..$vol]" -expr "a"  -prefix "${output}/${subj}_ses-1_${task}_echo-${n_echo}_part-mag_bold_${method}${o}.nii.gz" -overwrite
-			if [[ $make_residualds == "True" ]]; then
+			if [[ $make_residuals == "True" ]]; then
 				echo "Making residuals between vanilla and denoised volumes"
-				3dcalc -a ${output}/${subj}_ses-1_${task}_echo-${n_echo}_part-mag_bold_${method}${o}.nii.gz -b ${origin}/${subj}_ses-1_${task}_echo-${n_echo}_part-mag_bold_vanilla${o}.nii.gz -expr '(b-a)' -prefix ${output}/${subj}_ses-1_${task}_echo-${n_echo}_part-mag_residuals_${method}${o}.nii.gz
+				3dcalc -a ${output}/${subj}_ses-1_${task}_echo-${n_echo}_part-mag_bold_${method}${o}.nii.gz -b ${origin}/${subj}_ses-1_${task}_echo-${n_echo}_part-mag_bold_vanilla${o}.nii.gz -expr '(b-a)' -prefix ${output}/${subj}_ses-1_${task}_echo-${n_echo}_part-mag_residuals_${method}${o}.nii.gz -overwrite
 			fi
 
 
