@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH --partition=general
 #SBATCH --qos=regular
-#SBATCH --job-name=TMPPCA_complete_residuals
+#SBATCH --job-name=TMPPCA_halves_residuals
 #SBATCH --nodes=1
 #SBATCH --cpus-per-task=16
 #SBATCH --time=3:00:00
@@ -18,8 +18,8 @@ module load AFNI
 
 list_task=( "task-HABLA1200" "task-HABLA1700" )
 list_sub=( "001" "002" "003" "004" "005" )
-split="False"
-calculate_residuals="True"
+split="True"
+make_residuals="True"
 for sub_label in "${list_sub[@]}" 
 do
 	for sub_task in "${list_task[@]}"
