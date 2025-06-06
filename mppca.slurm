@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH --partition=general
 #SBATCH --qos=regular
-#SBATCH --job-name=MPPCA_halves
+#SBATCH --job-name=MPPCA_halves_residuals
 #SBATCH --nodes=1
 #SBATCH --cpus-per-task=16
 #SBATCH --time=3:00:00
@@ -14,7 +14,7 @@
 
 
 module load MATLAB-IKUR
-
+module load AFNI
 
 #list_task=( "task-HABLA1700" )
 list_task=( "task-HABLA1200" "task-HABLA1700" )
@@ -22,6 +22,7 @@ list_task=( "task-HABLA1200" "task-HABLA1700" )
 list_sub=( "001" "002" "003" "004" "005" )
 method="mmpca"
 split="True"
+make_residuals="True"
 #list_sub=( "003" )
 counter=0
 for sub_label in "${list_sub[@]}" 
@@ -51,7 +52,7 @@ for half in "${halves[@]}"
 do
 mppca="/home/mflores/scripts/mppca.m"
 temp_mppca=$(mktemp ~/mppcaXXXXXX.m)
-origin=/scratch/mflores/Resting_State/${subj}/ses-1/func_preproc_${method}
+origin=/scratch/mflores/Resting_State/${subj}/ses-1/func_preproc_vanilla
 output=/scratch/mflores/Resting_State/${subj}/ses-1/func_preproc_${method}
 
 sed "s+SUBJECT+"${sub_label}"+;" $mppca>${temp_mppca}.e
@@ -60,5 +61,14 @@ sed "s+TASK+"${sub_task}"+;" ${temp_mppca}.ee>$temp_mppca
 
 matlab -batch "run('$temp_mppca');exit" 
 rm ${temp_mppca}*
+	if [[ $make_residuals == "True" ]]; then
+		echoes=($(seq 1 4))
+		echo "Making residuals between vanilla and denoised volumes"
+		for n_echo in "${echoes[@]}"; do
+
+			3dcalc -a ${output}/${subj}_ses-1_${task}_echo-${n_echo}_part-mag_bold_${method}${half}.nii.gz -b ${origin}/${subj}_ses-1_${task}_echo-${n_echo}_part-mag_bold_vanilla${half}.nii.gz -expr '(b-a)' -prefix ${output}/${subj}_ses-1_${task}_echo-${n_echo}_part-mag_residuals_${method}${half}.nii.gz -overwrite
+		done
+	fi
+
 done
 
