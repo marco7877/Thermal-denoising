@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH --partition=general
 #SBATCH --qos=regular
-#SBATCH --job-name=NORDIC_halves_residuals
+#SBATCH --job-name=align_vanilla_residuals
 #SBATCH --nodes=1
 #SBATCH --cpus-per-task=16
 #SBATCH --time=3:00:00
@@ -25,7 +25,7 @@ tasks=( "task-HABLA1200" "task-HABLA1700" )
 #runs=( "1" "2" )
 list_subj=( "001" "002" "003" "004" "005" )
 make_residuals="True"
-halves="True"
+halves="False"
 counter=0
 for n_sub in "${list_subj[@]}" 
 do
@@ -147,6 +147,7 @@ else
 	noise_vol=$(($volumes-$(($noise-1))))
 	signal_vol=$(($noise_vol-1))
 	vol_half=$(($noise_vol/2))
+	vol_half_end=$(($vol_half-1))
 	echo "Unsplitted time series has ${volumes} volumes"
 	echo "After taking out noise scans we have ${noise_vol} volumes"
 	echo "Half of the data set is ${vol_half}"
@@ -187,7 +188,7 @@ else
 		3dcalc -a "${part_phase}.nii.gz[${noise_vol}..$]" -expr "a" -prefix ${noise_phase}.nii.gz -overwrite
 
 
-		3dcalc -a "${part_mag}.nii.gz[0..${vol_half}]" -expr "a" -prefix ${part_mag_half1}u.nii.gz -overwrite
+		3dcalc -a "${part_mag}.nii.gz[0..${vol_half_end}]" -expr "a" -prefix ${part_mag_half1}u.nii.gz -overwrite
 
 		3dTcat -prefix ${part_mag_half1}.nii.gz ${part_mag_half1}u.nii.gz "${noise_mag}.nii.gz[1]" -overwrite
 
@@ -195,7 +196,7 @@ else
 
 		3dTcat -prefix ${part_mag_half2}.nii.gz ${part_mag_half2}u.nii.gz "${noise_mag}.nii.gz[2]" -overwrite
 
-		3dcalc -a "${part_phase}.nii.gz[0..${vol_half}]" -expr "a" -prefix ${part_phase_half1}u.nii.gz -overwrite
+		3dcalc -a "${part_phase}.nii.gz[0..${vol_half_end}]" -expr "a" -prefix ${part_phase_half1}u.nii.gz -overwrite
 
 
 		3dTcat -prefix ${part_phase_half1}.nii.gz ${part_phase_half1}u.nii.gz "${noise_phase}.nii.gz[1]" -overwrite
