@@ -1,7 +1,7 @@
-#!/bin/bash
+#!/bin/bash -xv
 #SBATCH --partition=general
 #SBATCH --qos=regular
-#SBATCH --job-name=MPPCA_halves_residuals
+#SBATCH --job-name=MPPCA_whole_residuals
 #SBATCH --nodes=1
 #SBATCH --cpus-per-task=16
 #SBATCH --time=3:00:00
@@ -16,6 +16,7 @@
 module load MATLAB-IKUR
 module load AFNI
 
+PS4='${LINENO}: '
 #list_task=( "task-HABLA1700" )
 list_task=( "task-HABLA1200" "task-HABLA1700" )
 #runs=( "1" "2" )
@@ -44,7 +45,7 @@ echo "############# SUBJECT :${sub_label}      #############"
 echo "############# TASK :${sub_task}          #############"
 echo "##################################################"
 if [[ ${split} == "True" ]];then
-	halves=( "1" "2" )
+	halves=( "1" "2" "" )
 else
 	halves=("")
 fi
