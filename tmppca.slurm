@@ -1,7 +1,7 @@
-#!/bin/bash
+#!/bin/bash -xv
 #SBATCH --partition=general
 #SBATCH --qos=regular
-#SBATCH --job-name=TMPPCA_halves_residuals
+#SBATCH --job-name=TMPPCA_complete_residuals
 #SBATCH --nodes=1
 #SBATCH --cpus-per-task=16
 #SBATCH --time=3:00:00
@@ -16,6 +16,7 @@
 module load MATLAB-IKUR
 module load AFNI
 
+PS4='${LINENO}: '
 list_task=( "task-HABLA1200" "task-HABLA1700" )
 list_sub=( "001" "002" "003" "004" "005" )
 split="True"
@@ -39,7 +40,7 @@ echo "############# SUBJECT :${sub_label}      #############"
 echo "############# TASK :${sub_task}          #############"
 echo "##################################################"
 
-mppca="/home/mflores/scripts/run_TensorMPPCA.m"
+mppca="/home/mflores/Thermal-denoising/run_TensorMPPCA.m"
 temp_mppca=$(mktemp ~/mppcaXXXXXX.m)
 method="tmmpca"
 
@@ -47,7 +48,7 @@ origin=/scratch/mflores/Resting_State/${subj}/ses-1/func_preproc_vanilla
 output=/scratch/mflores/Resting_State/${subj}/ses-1/func_preproc_${method}
 
 if [[ ${split} == "True" ]];then
-	halves=( "1" "2" )
+	halves=( "1" "2" "" )
 else
 	halves=("")
 fi
