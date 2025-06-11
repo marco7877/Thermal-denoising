@@ -1,7 +1,7 @@
-#!/bin/bash
+#!/bin/bash -xv
 #SBATCH --partition=general
 #SBATCH --qos=regular
-#SBATCH --job-name=align_vanilla_residuals
+#SBATCH --job-name=nordic_complete_residuals
 #SBATCH --nodes=1
 #SBATCH --cpus-per-task=16
 #SBATCH --time=3:00:00
