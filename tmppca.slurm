@@ -1,10 +1,10 @@
 #!/bin/bash -xv
 #SBATCH --partition=general
 #SBATCH --qos=regular
-#SBATCH --job-name=TMPPCA_complete_residuals
+#SBATCH --job-name=TMPPCA_whole_residuals
 #SBATCH --nodes=1
 #SBATCH --cpus-per-task=16
-#SBATCH --time=3:00:00
+#SBATCH --time=4:00:00
 #SBATCH --mem=16G
 #SBATCH --array=0-9
 #SBATCH --mail-type=ALL
@@ -41,11 +41,10 @@ echo "############# TASK :${sub_task}          #############"
 echo "##################################################"
 
 mppca="/home/mflores/Thermal-denoising/run_TensorMPPCA.m"
-temp_mppca=$(mktemp ~/mppcaXXXXXX.m)
 method="tmmpca"
 
-origin=/scratch/mflores/Resting_State/${subj}/ses-1/func_preproc_vanilla
-output=/scratch/mflores/Resting_State/${subj}/ses-1/func_preproc_${method}
+origin=/scratch/mflores/Resting_State/${sub_label}/ses-1/func_preproc_vanilla
+output=/scratch/mflores/Resting_State/${sub_label}/ses-1/func_preproc_${method}
 
 if [[ ${split} == "True" ]];then
 	halves=( "1" "2" "" )
@@ -54,9 +53,8 @@ else
 fi
 
 for half in "${halves[@]}";do
-
-
-
+	
+	temp_mppca=$(mktemp ~/mppcaXXXXXX.m)
 	sed "s+SUBJECT+"${sub_label}"+;" $mppca>${temp_mppca}.e
 	sed "s+HALF+"${half}"+;" ${temp_mppca}.e>${temp_mppca}.f
 	sed "s+TASK+"${sub_task}"+;" ${temp_mppca}.f>$temp_mppca
@@ -69,7 +67,7 @@ for half in "${halves[@]}";do
 		echo "Making residuals between vanilla and denoised volumes"
 		for n_echo in "${echoes[@]}"; do
 
-			3dcalc -a ${output}/${subj}_ses-1_${task}_echo-${n_echo}_part-mag_bold_${method}${half}.nii.gz -b ${origin}/${subj}_ses-1_${task}_echo-${n_echo}_part-mag_bold_vanilla${half}.nii.gz -expr '(b-a)' -prefix ${output}/${subj}_ses-1_${task}_echo-${n_echo}_part-mag_residuals_${method}${half}.nii.gz -overwrite
+			3dcalc -a ${output}/${sub_label}_ses-1_${task}_echo-${n_echo}_part-mag_bold_${method}${half}.nii.gz -b ${origin}/${sub_label}_ses-1_${task}_echo-${n_echo}_part-mag_bold_vanilla${half}.nii.gz -expr '(b-a)' -prefix ${output}/${sub_label}_ses-1_${task}_echo-${n_echo}_part-mag_residuals_${method}${half}.nii.gz -overwrite
 		done
 	fi
 
