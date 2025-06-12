@@ -109,7 +109,7 @@ do
 			fi
 			if [[ "${method}" == "vanilla" ]]
 			then
-				for volume in "" "1" "2": do
+				for volume in "" "1" "2"; do
 
 				mv ${output}/${subj}_ses-1_${task}_echo-${n_echo}_${parts}_bold_${method}_dsd${volume}.nii.gz ${output}/${subj}_ses-1_${task}_echo-${n_echo}_${parts}_bold_${method}${volume}.nii.gz
 				echo "mv ${output}/${subj}_ses-1_${task}_echo-${n_echo}_${parts}_bold_${method}_dsd${volume}.nii.gz ${output}/${subj}_ses-1_${task}_echo-${n_echo}_${parts}_bold_${method}${volume}.nii.gz"
