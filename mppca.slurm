@@ -56,7 +56,7 @@ temp_mppca=$(mktemp ~/mppcaXXXXXX.m)
 origin=/scratch/mflores/Resting_State/${subj}/ses-1/func_preproc_vanilla
 output=/scratch/mflores/Resting_State/${subj}/ses-1/func_preproc_${method}
 
-sed "s+SUBJECT+"${subject}"+;" $mppca>${temp_mppca}.e
+sed "s+SUBJECT+"${subj}"+;" $mppca>${temp_mppca}.e
 sed "s+HALF+"${half}"+;" ${temp_mppca}.e>${temp_mppca}.ee
 sed "s+TASK+"${task}"+;" ${temp_mppca}.ee>$temp_mppca
 
