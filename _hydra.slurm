@@ -191,7 +191,9 @@ if [[ $halves == "True" ]]; then
 		outs=(${part_mag_out1} ${part_mag_out2})
 fi
 for ext in "${extentions[@]}"; do
-	
+if [[ $ext != "" ]]; then
+	noise=1
+fi
 	temp_nordic=$(mktemp ${output}/tmp/nordicXXXXXX.m)
 	
 	echo "*************************************************************"
