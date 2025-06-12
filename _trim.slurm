@@ -102,9 +102,9 @@ do
 				epi_half=$(($n_epi_whole/2))
 				epi_half_end=$(($epi_half-1))
 				echo "Triming ${epi_whole} in halves"
-				3dcalc -a "${epi_whole}[0..${epi_half_end}]" -expr "a" -prefix ${output}/${subj}_ses-1_${task}_echo-${n_echo}_${parts}_bold_${method}1_dsd.nii.gz -overwrite
+				3dcalc -a "${epi_whole}[0..${epi_half_end}]" -expr "a" -prefix ${output}/${subj}_ses-1_${task}_echo-${n_echo}_${parts}_bold_${method}_dsd1.nii.gz -overwrite
 
-				3dcalc -a "${epi_whole}[${epi_half}..$]" -expr "a" -prefix ${output}/${subj}_ses-1_${task}_echo-${n_echo}_${parts}_bold_${method}2_dsd.nii.gz -overwrite
+				3dcalc -a "${epi_whole}[${epi_half}..$]" -expr "a" -prefix ${output}/${subj}_ses-1_${task}_echo-${n_echo}_${parts}_bold_${method}_dsd2.nii.gz -overwrite
 
 			fi
 			if [[ "${method}" == "vanilla" ]]
