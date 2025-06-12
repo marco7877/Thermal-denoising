@@ -1,12 +1,12 @@
-#!/bin/bash
+#!/bin/bash -xv
 #SBATCH --partition=general
 #SBATCH --qos=regular
-#SBATCH --job-name=HYDRA_sub5
+#SBATCH --job-name=HYDRA_whole_residuals
 #SBATCH --nodes=1
 #SBATCH --cpus-per-task=16
-#SBATCH --time=3:00:00
+#SBATCH --time=4:00:00
 #SBATCH --mem=80G
-#SBATCH --array=1-2
+#SBATCH --array=1-10
 #SBATCH --mail-type=ALL
 #SBATCH --mail-user=mflores@bcbl.eu
 #SBATCH --error=/scratch/mflores/Resting_State/logs/%x_%a_%j.txt
@@ -23,9 +23,10 @@ echo "##################################################"
 
 list_task=( "HABLA1200" "HABLA1700" )
 #runs=( "1" "2" )
-list_subj=( "005" )
+list_subj=( "005" "001" "002" "003" "004" )
 counter=0
-make_residualds="True"
+make_residuals="True"
+halves="True"
 for n_sub in "${list_subj[@]}" 
 do
 	for n_task in "${list_task[@]}"
@@ -80,11 +81,16 @@ part_phase=${output}/${subj}_ses-1_${task}_echo-1_part-phase_bold_${method}_dsd.
 echo "My reference part_phase is: ${part_phase}"
 
 
-temp_nordic=$(mktemp ${output}/tmp/nordicXXXXXX.m)
+
+if [[ $halves == "True" ]]; then
+	extentions=( "" "1" "2" )
+else
+	extentions=( "" )
+fi
 
 # make a list from 1 to 4 with 1 length digits
 
-list_echoes=( "1" "2" "3" "4" )
+list_echoes=($(seq 1 4))
 
 echo "List of echoes is ${list_echoes}"
 
@@ -110,66 +116,139 @@ echo "Phase volumes to concatenate are: $part_phase"
 
 3dZcat $part_phase -prefix ${output}/${subj}_ses-1_${task}_echoes_part-phase_bold_${method}_dsd.nii.gz -overwrite
 
-echo "*************************************************************"
-echo "addpath(genpath('/home/mflores/nordic'));cd '${repo}';ARG.temporal_phase=1;ARG.noise_volume_last=${noise};ARG.phase_filter_width=10;ARG.save_add_info=1;ARG.save_gfactor_map=${save_gfactor};ARG.DIROUT='${output}';NIFTI_NORDIC('${output}/${subj}_ses-1_${task}_echoes_part-mag_bold_${method}_dsd.nii.gz','${output}/${subj}_ses-1_${task}_echoes_part-phase_bold_${method}_dsd.nii.gz','${subj}_ses-1_${task}_echoes_part-mag_bold_${method}',ARG);" > $temp_nordic
 
-matlab -batch "run('$temp_nordic');exit" 
+if [[ $halves == "True" ]]; then
+
+	volumes=$(3dinfo -nvi ${output}/${subj}_ses-1_${task}_echoes_part-mag_bold_${method}_dsd.nii.gz)
+	noise_vol=$(($volumes-$(($noise-1))))
+	signal_vol=$(($noise_vol-1))
+	vol_half=$(($noise_vol/2))
+	vol_half_end=$(($vol_half-1))
+	echo "Unsplitted time series has ${volumes} volumes"
+	echo "After taking out noise scans we have ${noise_vol} volumes"
+	echo "Half of the data set is ${vol_half}"
+
+		part_mag="${output}/${subj}_ses-1_${task}_echoes_part-mag_bold_${method}_dsd"
+
+		part_mag_half1="${output}/${subj}_ses-1_${task}_echoes_part-mag_bold_${method}_dsd1"
+
+		part_mag_half2="${output}/${subj}_ses-1_${task}_echoes_part-mag_bold_${method}_dsd2"
+
+		part_mag_out1="${subj}_ses-1_${task}_echoes_part-mag_bold_${method}N1"
+
+		part_mag_out2="${subj}_ses-1_${task}_echoes_part-mag_bold_${method}N2"
+
+		part_phase="${output}/${subj}_ses-1_${task}_echoes_part-phase_bold_${method}_dsd"
+
+		part_phase_half1="${output}/${subj}_ses-1_${task}_echoes_part-phase_bold_${method}_dsd1"
+
+		part_phase_half2="${output}/${subj}_ses-1_${task}_echoes_part-phase_bold_${method}_dsd2"
+
+		noise_mag="${output}/${subj}_ses-1_${task}_echoes_part-mag_noise_${method}"
+
+		noise_phase="${output}/${subj}_ses-1_${task}_echoes_part-phase_noise_${method}"
+
+		echo "Cutting volumes in halves"
+
+		echo "Unsplitted time series has ${volumes} volumes"
+		echo "After taking out noise scans we have ${noise_vol} volumes"
+		echo "Half of the data set is ${vol_half}"
+
+		echo  "3dcalc  -a "${part_mag}.nii.gz[${noise_vol}..$]" -expr "a" -prefix ${noise_mag}.nii.gz -overwrite"
+		3dcalc -a "${part_mag}.nii.gz[${noise_vol}..$]" -expr "a" -prefix ${noise_mag}.nii.gz -overwrite
+		echo "3dcalc -a "${part_phase}.nii.gz[${noise_vol}..$]" -expr "a" -prefix ${noise_phase}.nii.gz -overwrite"
+		3dcalc -a "${part_phase}.nii.gz[${noise_vol}..$]" -expr "a" -prefix ${noise_phase}.nii.gz -overwrite
 
 
-gzip -f ${output}/${subj}_ses-1_${task}_echoes_part-mag_bold_${method}.nii
+		3dcalc -a "${part_mag}.nii.gz[0..${vol_half_end}]" -expr "a" -prefix ${part_mag_half1}u.nii.gz -overwrite
 
-z_hydra=$(3dinfo -nk ${output}/${subj}_ses-1_${task}_echoes_part-phase_bold_${method}.nii.gz 
-)
+		3dTcat -prefix ${part_mag_half1}.nii.gz ${part_mag_half1}u.nii.gz "${noise_mag}.nii.gz[1]" -overwrite
 
-z_orig=$(3dinfo -nk ${output}/${subj}_ses-1_${task}_echo-1_part-mag_bold_${method}_dsd.nii.gz
-)
-start=0
+		rm ${part_mag_half1}u.nii.gz
+		
+		3dcalc -a "${part_mag}.nii.gz[${vol_half}..${signal_vol}]" -expr "a" -prefix ${part_mag_half2}u.nii.gz -overwrite
 
-finish=$(($z_orig-1))
+		3dTcat -prefix ${part_mag_half2}.nii.gz ${part_mag_half2}u.nii.gz "${noise_mag}.nii.gz[2]" -overwrite
+		
+		rm ${part_mag_half2}u.nii.gz
+		
+		3dcalc -a "${part_phase}.nii.gz[0..${vol_half_end}]" -expr "a" -prefix ${part_phase_half1}u.nii.gz -overwrite
 
-list_echoes=( "1" "2" "3" "4" )
+		3dTcat -prefix ${part_phase_half1}.nii.gz ${part_phase_half1}u.nii.gz "${noise_phase}.nii.gz[1]" -overwrite
+		
+		rm ${part_phase_half1}u.nii.gz
 
-for n_echoe in "${list_echoes[@]}"
+		3dcalc -a "${part_phase}.nii.gz[${vol_half}..${signal_vol}]" -expr "a" -prefix ${part_phase_half2}u.nii.gz -overwrite
 
-do
-
-	echo "*************************************************************"
-	echo "3dZcutup -prefix ${output}/${subj}_ses-1_${task}_echo-${n_echoe}_part-mag_bold_${method}.nii.gz -keep ${start} ${finish} ${output}/${subj}_ses-1_${task}_echoes_part-mag_bold_${method}_dsd.nii.gz -overwrite"
-
-	3dZcutup -prefix ${output}/${subj}_ses-1_${task}_echo-${n_echoe}_part-mag_bold_${method}.nii.gz -keep ${start} ${finish} ${output}/${subj}_ses-1_${task}_echoes_part-mag_bold_${method}.nii.gz -overwrite
-
-
-	start=$(($start+$z_orig))
-
-	finish=$(($finish+$z_orig))
-done
-
-ATR=$( 3dAttribute IJK_TO_DICOM_REAL ${output}/${subj}_ses-1_${task}_echo-1_part-mag_bold_${method}_dsd.nii.gz )
-
-volumes=$(3dinfo -nvi ${output}/${subj}_ses-1_${task}_echo-1_part-mag_bold_${method}.nii.gz)
-
-vol=$(($volumes-$noise))
-
-echo "I have original $volumes  volumes but after removing noise we have: $vol"
-
-for n_echoe in "${list_echoes[@]}"
-
-do
-
-	3drefit -atrfloat IJK_TO_DICOM_REAL "${ATR}" ${output}/${subj}_ses-1_${task}_echo-${n_echoe}_part-mag_bold_${method}.nii.gz
-
-	# Removing last noise volumes
-
-	echo "removing noise to ${output}/${subj}_ses-1_${task}_echo-${n_echoe}_part-mag_bold_${method}.nii.gz"
-
-	3dcalc -a "${output}/${subj}_ses-1_${task}_echo-${n_echoe}_part-mag_bold_${method}.nii.gz[0..${vol}]" -expr 'a' -prefix ${output}/${subj}_ses-1_${task}_echo-${n_echoe}_part-mag_bold_${method}.nii.gz -overwrite
-
-if [[ $make_residualds == "True" ]]; then
-	echo "Making residuals between vanilla and denoised volumes"
-	3dcalc -a ${output}/${subj}_ses-1_${task}_echo-${n_echoe}_part-mag_bold_${method}.nii.gz -b ${origin}/${subj}_ses-1_${task}_echo-${n_echoe}_part-mag_bold_vanilla.nii.gz -expr '(b-a)' -prefix ${output}/${subj}_ses-1_${task}_echo-${n_echoe}_part-mag_residuals_${method}.nii.gz
+		3dTcat -prefix ${part_phase_half2}.nii.gz ${part_phase_half2}u.nii.gz "${noise_phase}.nii.gz[2]" -overwrite
+		
+		rm ${part_phase_half2}u.nii.gz
+		
+		mags=(${part_mag_half1} ${part_mag_half2})
+		
+		phases=(${part_phase_half1} ${part_phase_half2})
+		
+		outs=(${part_mag_out1} ${part_mag_out2})
 fi
-done
+for ext in "${extentions[@]}"; do
+	
+	temp_nordic=$(mktemp ${output}/tmp/nordicXXXXXX.m)
+	
+	echo "*************************************************************"
+	echo "addpath(genpath('/home/mflores/nordic'));cd '${repo}';ARG.temporal_phase=1;ARG.noise_volume_last=${noise};ARG.phase_filter_width=10;ARG.save_add_info=1;ARG.save_gfactor_map=${save_gfactor};ARG.DIROUT='${output}';NIFTI_NORDIC('${output}/${subj}_ses-1_${task}_echoes_part-mag_bold_${method}_dsd${ext}.nii.gz','${output}/${subj}_ses-1_${task}_echoes_part-phase_bold_${method}_dsd${ext}.nii.gz','${subj}_ses-1_${task}_echoes_part-mag_bold_${method}${ext}',ARG);" > $temp_nordic
 
+	matlab -batch "run('$temp_nordic');exit" 
+
+
+	gzip -f ${output}/${subj}_ses-1_${task}_echoes_part-mag_bold_${method}${ext}.nii
+
+
+	z_orig=$(3dinfo -nk ${output}/${subj}_ses-1_${task}_echo-1_part-mag_bold_${method}_dsd${ext}.nii.gz
+	)
+	start=0
+
+	finish=$(($z_orig-1))
+
+	for n_echoe in "${list_echoes[@]}"
+
+	do
+
+		echo "*************************************************************"
+		echo "3dZcutup -prefix ${output}/${subj}_ses-1_${task}_echo-${n_echoe}_part-mag_bold_${method}${ext}.nii.gz -keep ${start} ${finish} ${output}/${subj}_ses-1_${task}_echoes_part-mag_bold_${method}_dsd${ext}.nii.gz -overwrite"
+
+		3dZcutup -prefix ${output}/${subj}_ses-1_${task}_echo-${n_echoe}_part-mag_bold_${method}${ext}.nii.gz -keep ${start} ${finish} ${output}/${subj}_ses-1_${task}_echoes_part-mag_bold_${method}${ext}.nii.gz -overwrite
+
+
+		start=$(($start+$z_orig))
+
+		finish=$(($finish+$z_orig))
+	done
+	
+	ATR=$( 3dAttribute IJK_TO_DICOM_REAL ${output}/${subj}_ses-1_${task}_echo-1_part-mag_bold_${method}_dsd${ext}.nii.gz )
+
+	volumes=$(3dinfo -nvi ${output}/${subj}_ses-1_${task}_echo-1_part-mag_bold_${method}${ext}.nii.gz)
+
+	vol=$(($volumes-$noise))
+
+	echo "I have original $volumes  volumes but after removing noise we have: $vol"
+
+	for n_echoe in "${list_echoes[@]}"
+
+	do
+
+		3drefit -atrfloat IJK_TO_DICOM_REAL "${ATR}" ${output}/${subj}_ses-1_${task}_echo-${n_echoe}_part-mag_bold_${method}${ext}.nii.gz
+
+		# Removing last noise volumes
+
+		echo "removing noise to ${output}/${subj}_ses-1_${task}_echo-${n_echoe}_part-mag_bold_${method}${ext}.nii.gz"
+
+		3dcalc -a "${output}/${subj}_ses-1_${task}_echo-${n_echoe}_part-mag_bold_${method}${ext}.nii.gz[0..${vol}]" -expr 'a' -prefix ${output}/${subj}_ses-1_${task}_echo-${n_echoe}_part-mag_bold_${method}${ext}.nii.gz -overwrite
+	if [[ $make_residualds == "True" ]]; then
+		echo "Making residuals between vanilla and denoised volumes"
+		3dcalc -a ${output}/${subj}_ses-1_${task}_echo-${n_echoe}_part-mag_bold_${method}${ext}.nii.gz -b ${origin}/${subj}_ses-1_${task}_echo-${n_echoe}_part-mag_bold_vanilla${ext}.nii.gz -expr '(b-a)' -prefix ${output}/${subj}_ses-1_${task}_echo-${n_echoe}_part-mag_residuals_${method}${ext}.nii.gz
+	fi
+done
+done
 
 
 #rm -rf ${output}tmp
