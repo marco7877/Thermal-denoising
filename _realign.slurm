@@ -86,7 +86,7 @@ else
 	extentions=""
 fi
 if [[ ${trans_matrix} == "True" ]];then
-for ext in $extentions; do
+for ext in "${extentions[@]}"; do
 part_mag=${origin}/${subj}_ses-1_${task}_echo-1_part-mag_bold_${method}${ext}.nii.gz
 	3dvolreg -overwrite -Fourier -base ${sbref} \
 		-1Dfile  ${output}/${subj}_ses-1_${task}_echo-1_part-mag_bold_${method}_mcf${ext}.1D \
@@ -106,7 +106,7 @@ fi
 list_echoes=($(seq 1 4))
 
 for ext in "${extentions[@]}"; do
-
+${output}/${subj}_ses-1_${task}_echo-1_part-mag_bold_${method}_mcf${ext}.aff12.1D
 matrix=${matrix_dir}/${subj}_ses-1_${task}_echo-1_part-mag_bold_vanilla_mcf${ext}.aff12.1D
 echo "Your files will have the extention: ${ext}"
 for n_echo in "${list_echoes[@]}"
