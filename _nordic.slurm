@@ -1,10 +1,10 @@
 #!/bin/bash -xv
 #SBATCH --partition=general
 #SBATCH --qos=regular
-#SBATCH --job-name=nordic_halves_residuals
+#SBATCH --job-name=nordic_whole_residuals
 #SBATCH --nodes=1
 #SBATCH --cpus-per-task=16
-#SBATCH --time=4:00:00
+#SBATCH --time=5:00:00
 #SBATCH --mem=80G
 #SBATCH --array=1-10
 #SBATCH --mail-type=ALL
@@ -189,19 +189,23 @@ if [[ $halves == "True" ]]; then
 		3dcalc -a "${part_mag}.nii.gz[0..${vol_half_end}]" -expr "a" -prefix ${part_mag_half1}u.nii.gz -overwrite
 
 		3dTcat -prefix ${part_mag_half1}.nii.gz ${part_mag_half1}u.nii.gz "${noise_mag}.nii.gz[1]" -overwrite
+		rm ${part_mag_half1}u.nii.gz
 
 		3dcalc -a "${part_mag}.nii.gz[${vol_half}..${signal_vol}]" -expr "a" -prefix ${part_mag_half2}u.nii.gz -overwrite
 
 		3dTcat -prefix ${part_mag_half2}.nii.gz ${part_mag_half2}u.nii.gz "${noise_mag}.nii.gz[2]" -overwrite
+		rm ${part_mag_half2}u.nii.gz
 
 		3dcalc -a "${part_phase}.nii.gz[0..${vol_half_end}]" -expr "a" -prefix ${part_phase_half1}u.nii.gz -overwrite
 
 
 		3dTcat -prefix ${part_phase_half1}.nii.gz ${part_phase_half1}u.nii.gz "${noise_phase}.nii.gz[1]" -overwrite
+		rm ${part_phase_half1}u.nii.gz
 
 		3dcalc -a "${part_phase}.nii.gz[${vol_half}..${signal_vol}]" -expr "a" -prefix ${part_phase_half2}u.nii.gz -overwrite
 
 		3dTcat -prefix ${part_phase_half2}.nii.gz ${part_phase_half2}u.nii.gz "${noise_phase}.nii.gz[2]" -overwrite
+		rm ${part_phase_half2}u.nii.gz
 
 		noise=1
 		mags=(${part_mag_half1} ${part_mag_half2})
