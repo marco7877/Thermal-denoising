@@ -4,7 +4,7 @@
 #SBATCH --job-name=align_methods_complete
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=16
-#SBATCH --time=00:40:00
+#SBATCH --time=01:30:00
 #SBATCH --array=1-40
 #SBATCH --mem=16G
 #SBATCH --mail-type=ALL,ARRAY_TASKS
@@ -26,7 +26,7 @@ counter=0
 nechoes=4
 residuals="True"
 trans_matrix="False"
-halves="False"
+halves="True"
 echo My task ID is"${SLURM_ARRAY_TASK_ID}"
 
 for subj in "${list_subj[@]}"; do
@@ -71,7 +71,6 @@ if [[ ! -e ${output} ]]; then
 fi
 
 # Reference original volumnes
-part_mag=${origin}/${subj}_ses-1_${task}_echo-1_part-mag_bold_${method}${ext}
 echo "My reference part_mag is: ${part_mag}"
 sbref=${input}/${subj}_ses-1_${task}_echo-1_part-mag_sbref.nii.gz
 # define name for symbolic link 
@@ -86,14 +85,16 @@ if [[ $halves == "True" ]]; then
 else
 	extentions=""
 fi
-matrix=${matrix_dir}/${subj}_ses-1_${task}_echo-1_part-mag_bold_vanilla_mcf.aff12.1D
 if [[ ${trans_matrix} == "True" ]];then
+for ext in $extentions; do
+part_mag=${origin}/${subj}_ses-1_${task}_echo-1_part-mag_bold_${method}${ext}
 	3dvolreg -overwrite -Fourier -base ${sbref} \
-		-1Dfile  ${output}/${subj}_ses-1_${task}_echo-1_part-mag_bold_${method}_mcf.1D \
-		-1Dmatrix_save ${output}/${subj}_ses-1_${task}_echo-1_part-mag_bold_${method}_mcf.aff12.1D \
-		-prefix ${output}/${subj}_ses-1_${task}_echo-1_part-mag_bold_${method}_mcf.nii.gz \
+		-1Dfile  ${output}/${subj}_ses-1_${task}_echo-1_part-mag_bold_${method}_mcf${ext}.1D \
+		-1Dmatrix_save ${output}/${subj}_ses-1_${task}_echo-1_part-mag_bold_${method}_mcf${ext}.aff12.1D \
+		-prefix ${output}/${subj}_ses-1_${task}_echo-1_part-mag_bold_${method}_mcf${ext}.nii.gz \
 		${part_mag}
 	matrix=${output}/${subj}_ses-1_${task}_echo-1_part-mag_bold_${method}_mcf.aff12.1D
+done
 fi
 #	1d_tool.py -infile ${output}/${subj}_ses-1_${task}_echo-1_part-mag_bold_${method}_mcf.1D \
 #		-demean -write ${output}/${subj}_ses-1_${task}_echo-1_part-mag_bold_${method}_mcf_demean.1D -overwrite
@@ -106,6 +107,7 @@ list_echoes=($(seq 1 4))
 
 for ext in "${extentions[@]}"; do
 
+matrix=${matrix_dir}/${subj}_ses-1_${task}_echo-1_part-mag_bold_vanilla_mcf${ext}.aff12.1D
 echo "Your files will have the extention: ${ext}"
 for n_echo in "${list_echoes[@]}"
 do
