@@ -1,10 +1,10 @@
 #!/bin/bash -xv
 #SBATCH --partition=general
 #SBATCH --qos=regular
-#SBATCH --job-name=nordic_complete_residuals
+#SBATCH --job-name=nordic_halves_residuals
 #SBATCH --nodes=1
 #SBATCH --cpus-per-task=16
-#SBATCH --time=3:00:00
+#SBATCH --time=4:00:00
 #SBATCH --mem=80G
 #SBATCH --array=1-10
 #SBATCH --mail-type=ALL
@@ -22,10 +22,9 @@ echo "##################################################"
 echo "MEICA JOB ${SLURM_ARRAY_TASK_ID}"
 echo "##################################################"
 tasks=( "task-HABLA1200" "task-HABLA1700" )
-#runs=( "1" "2" )
 list_subj=( "001" "002" "003" "004" "005" )
 make_residuals="True"
-halves="False"
+halves="True"
 counter=0
 for n_sub in "${list_subj[@]}" 
 do
@@ -54,8 +53,8 @@ origin=/scratch/mflores/Resting_State/${subj}/ses-1/func_preproc_vanilla
 output=/scratch/mflores/Resting_State/${subj}/ses-1/${preproc}
 
 noise=3 # number of noise volumes
-magn_only=0
-
+magn_only=""
+#magn_only="ARG.magnitude_only=1;"
 save_gfactor=1 # save gfactor map = 1 (saves gfactor and runs nordic); = 2 (saves gfactor and stops)  
 # MAIN
 
@@ -76,7 +75,6 @@ mkdir -p ${output}/gctmp # define temporary folder to save temporary matlab scri
 # TODO: Change nordic.m to return compressed files them)
 list_echoes=($(seq 1 4))
 echo "******************************************************************************"
-if [[ $halves == False ]];then
 
 	for n_echo in "${list_echoes[@]}"
 	do
@@ -98,7 +96,7 @@ if [[ $halves == False ]];then
 
 		echo "my nordic file is in: ${temp_nordic}"
 
-		echo "addpath(genpath('/data/mflores/nordic/'));cd '${repo}';ARG.noise_volume_last=${noise};ARG.temporal_phase=1;ARG.phase_filter_width=10;ARG.save_add_info=1;ARG.magnitude_only=${magn_only};ARG.save_gfactor_map=${save_gfactor};ARG.DIROUT='${output}/';NIFTI_NORDIC('${part_mag}.nii.gz','${part_phase}.nii.gz','${part_mag_out}',ARG);" > $temp_nordic
+		echo "addpath(genpath('/data/mflores/nordic/'));cd '${repo}';ARG.noise_volume_last=${noise};ARG.temporal_phase=1;ARG.phase_filter_width=10;ARG.save_add_info=1;${magn_only}ARG.save_gfactor_map=${save_gfactor};ARG.DIROUT='${output}/';NIFTI_NORDIC('${part_mag}.nii.gz','${part_phase}.nii.gz','${part_mag_out}',ARG);" > $temp_nordic
 
 		echo "##################################################"
 		echo "##################################################"
@@ -138,10 +136,10 @@ if [[ $halves == False ]];then
 
 			echo "******************************************************************************"
 			echo "deleting  temporal ${part_mag_thrm}"
-			#		rm ${part_mag_thrm}
+					rm ${part_mag_thrm}
 		fi
 	done	
-else
+if [[ $halves == "True" ]]; then
 
 	volumes=$(3dinfo -nvi ${output}/${subj}_ses-1_${task}_echo-1_part-mag_bold_${method}_dsd.nii.gz)
 	noise_vol=$(($volumes-$(($noise-1))))
@@ -205,6 +203,7 @@ else
 
 		3dTcat -prefix ${part_phase_half2}.nii.gz ${part_phase_half2}u.nii.gz "${noise_phase}.nii.gz[2]" -overwrite
 
+		noise=1
 		mags=(${part_mag_half1} ${part_mag_half2})
 		phases=(${part_phase_half1} ${part_phase_half2})
 		outs=(${part_mag_out1} ${part_mag_out2})
@@ -219,7 +218,7 @@ else
 			echo "my output magnitude volumes is: ${outs[$i]}"
 
 			echo "my nordic file is in: ${temp_nordic}"
-			echo "addpath(genpath('/data/mflores/nordic/'));cd '${repo}';ARG.noise_volume_last=${noise};ARG.temporal_phase=1;ARG.phase_filter_width=10;ARG.save_add_info=1;ARG.magnitude_only=1;ARG.save_gfactor_map=${save_gfactor};ARG.DIROUT='${output}/';NIFTI_NORDIC('${mags[$i]}.nii.gz','${phases[$i]}.nii.gz','${outs[$i]}',ARG);" > $temp_nordic
+			echo "addpath(genpath('/data/mflores/nordic/'));cd '${repo}';ARG.noise_volume_last=${noise};ARG.temporal_phase=1;ARG.phase_filter_width=10;ARG.save_add_info=1;${magn_only}ARG.save_gfactor_map=${save_gfactor};ARG.DIROUT='${output}/';NIFTI_NORDIC('${mags[$i]}.nii.gz','${phases[$i]}.nii.gz','${outs[$i]}',ARG);" > $temp_nordic
 
 			echo "##################################################"
 			echo "##################################################"
