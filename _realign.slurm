@@ -5,7 +5,7 @@
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=16
 #SBATCH --time=01:30:00
-#SBATCH --array=1-40
+#SBATCH --array=1-10
 #SBATCH --mem=16G
 #SBATCH --mail-type=ALL,ARRAY_TASKS
 #SBATCH --mail-user=mflores@bcbl.eu
@@ -19,13 +19,13 @@ module load AFNI
 
 tasks=("task-HABLA1700" "task-HABLA1200")
 list_subj=("sub-001" "sub-002" "sub-003" "sub-004" "sub-005")
-methods=( "tmmpca" "nordic" "mppca" "hydra" )
-#methods=( "vanilla" )
+#methods=( "tmmpca" "nordic" "mppca" "hydra" )
+methods=( "vanilla" )
 # In case of halves, rememberthat extension == ?.nii.gz
 counter=0
 nechoes=4
-residuals="True"
-trans_matrix="False"
+residuals="False"
+trans_matrix="True"
 halves="True"
 echo My task ID is"${SLURM_ARRAY_TASK_ID}"
 
@@ -87,7 +87,7 @@ else
 fi
 if [[ ${trans_matrix} == "True" ]];then
 for ext in $extentions; do
-part_mag=${origin}/${subj}_ses-1_${task}_echo-1_part-mag_bold_${method}${ext}
+part_mag=${origin}/${subj}_ses-1_${task}_echo-1_part-mag_bold_${method}${ext}.nii.gz
 	3dvolreg -overwrite -Fourier -base ${sbref} \
 		-1Dfile  ${output}/${subj}_ses-1_${task}_echo-1_part-mag_bold_${method}_mcf${ext}.1D \
 		-1Dmatrix_save ${output}/${subj}_ses-1_${task}_echo-1_part-mag_bold_${method}_mcf${ext}.aff12.1D \
