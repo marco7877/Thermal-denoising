@@ -21,14 +21,14 @@ PS4='${LINENO}: '
 list_task=( "task-HABLA1200" "task-HABLA1700" )
 #runs=( "1" "2" )
 list_sub=( "001" "002" "003" "004" "005" )
-method="mmpca"
+method="mppca"
 split="True"
 make_residuals="True"
 #list_sub=( "003" )
 counter=0
 for sub_label in "${list_sub[@]}" 
 do
-	for sub_task in "${list_task[@]}"
+	for task in "${list_task[@]}"
 	do
 				if [[ $counter -eq ${SLURM_ARRAY_TASK_ID} ]]; then
 					echo "Reached expected permutation value: ${SLURM_ARRAY_TASK_ID}"
@@ -39,10 +39,10 @@ do
 				((counter++))
 	done
 done
-sub_label=sub-$sub_label
+subj=sub-$sub_label
 echo "##################################################"
-echo "############# SUBJECT :${sub_label}      #############"
-echo "############# TASK :${sub_task}          #############"
+echo "############# SUBJECT :${subj}      #############"
+echo "############# TASK :${task}          #############"
 echo "##################################################"
 if [[ ${split} == "True" ]];then
 	halves=( "1" "2" "" )
@@ -56,9 +56,9 @@ temp_mppca=$(mktemp ~/mppcaXXXXXX.m)
 origin=/scratch/mflores/Resting_State/${subj}/ses-1/func_preproc_vanilla
 output=/scratch/mflores/Resting_State/${subj}/ses-1/func_preproc_${method}
 
-sed "s+SUBJECT+"${sub_label}"+;" $mppca>${temp_mppca}.e
+sed "s+SUBJECT+"${subject}"+;" $mppca>${temp_mppca}.e
 sed "s+HALF+"${half}"+;" ${temp_mppca}.e>${temp_mppca}.ee
-sed "s+TASK+"${sub_task}"+;" ${temp_mppca}.ee>$temp_mppca
+sed "s+TASK+"${task}"+;" ${temp_mppca}.ee>$temp_mppca
 
 matlab -batch "run('$temp_mppca');exit" 
 rm ${temp_mppca}*
