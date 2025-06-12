@@ -4,7 +4,7 @@
 #SBATCH --job-name=MPPCA_whole_residuals
 #SBATCH --nodes=1
 #SBATCH --cpus-per-task=16
-#SBATCH --time=3:00:00
+#SBATCH --time=4:00:00
 #SBATCH --mem=60G
 #SBATCH --array=0-9
 #SBATCH --mail-type=ALL,ARRAY_TASKS
