@@ -49,13 +49,8 @@ task=task-${n_task}
 repo=/home/mflores/scripts
 origin=/scratch/mflores/Resting_State/${subj}/ses-1/func_preproc_vanilla
 output=/scratch/mflores/Resting_State/${subj}/ses-1/${preproc}
-magnetization=10
-
 noise=3 # number of noise volumes
-
-
 save_gfactor=1 # save gfactor map = 1 (saves gfactor and runs nordic); = 2 (saves gfactor and stops)  
-
 nechoes=4
 # MAIN
 
@@ -90,11 +85,12 @@ fi
 
 # make a list from 1 to 4 with 1 length digits
 
-list_echoes=($(seq 1 4))
+list_echoes=($(seq 1 ${nechoes}))
 
 echo "List of echoes is ${list_echoes}"
+list_aggregate=($(seq 2 ${nechoes}))
 
-for n_echo in "${list_echoes[@]}"
+for n_echo in "${list_aggregate[@]}"
 
 do
 
@@ -191,7 +187,9 @@ if [[ $halves == "True" ]]; then
 		outs=(${part_mag_out1} ${part_mag_out2})
 fi
 for ext in "${extentions[@]}"; do
-if [[ $ext != "" ]]; then
+if [[ $ext == "" ]]; then
+	noise=3
+else
 	noise=1
 fi
 	temp_nordic=$(mktemp ${output}/tmp/nordicXXXXXX.m)
