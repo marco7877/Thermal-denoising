@@ -205,7 +205,7 @@ fi
 	gzip -f ${output}/${subj}_ses-1_${task}_echoes_part-mag_bold_${method}${ext}.nii
 
 
-	z_orig=$(3dinfo -nk ${output}/${subj}_ses-1_${task}_echo-1_part-mag_bold_${method}_dsd${ext}.nii.gz
+	z_orig=$(3dinfo -nk ${output}/${subj}_ses-1_${task}_echo-1_part-mag_bold_${method}${ext}.nii.gz
 	)
 	start=0
 
@@ -226,7 +226,7 @@ fi
 		finish=$(($finish+$z_orig))
 	done
 	
-	ATR=$( 3dAttribute IJK_TO_DICOM_REAL ${output}/${subj}_ses-1_${task}_echo-1_part-mag_bold_${method}_dsd${ext}.nii.gz )
+	ATR=$( 3dAttribute IJK_TO_DICOM_REAL ${output}/${subj}_ses-1_${task}_echo-1_part-mag_bold_${method}${ext}.nii.gz )
 
 	volumes=$(3dinfo -nvi ${output}/${subj}_ses-1_${task}_echo-1_part-mag_bold_${method}${ext}.nii.gz)
 
