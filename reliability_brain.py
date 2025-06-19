@@ -81,8 +81,8 @@ def reliability_analysis(files,mask,sbref,directory=source_directory,
         print(" Data loaded and masked!")
         shape=array_dict[i].shape
         print(f"""Mask: {mask} contains {shape[0]} voxels""")
+    corr_dict={}
     if len(array_dict) == 1:
-        corr_dict={}
         corr_dict[0]=np.corrcoef(array_dict[0][:,:(shape[-1]//2)])
         print(f""" Functional connectivity for computed (pearson correlation) with shape {corr_dict[0].shape}""")
         corr_dict[1]=np.corrcoef(array_dict[0][:,(shape[-1]//2):])
