@@ -66,15 +66,15 @@ tasks=['task-HABLA1200', 'task-HABLA1700']
 #######################################################################################
 #def reliability_analysis(subject,task,methodx,mask,sbref,directory=source_directory,
 def reliability_analysis(files,mask,sbref,directory=source_directory,
-        split=True,plot=False,savecorr=False,hist=True):
+        split=True,plot=False,savecorr=False,hist=True,make_nifti=False):
 
     print(f"""Worth double checking! To understand output """)
     print(f"""Computing reliability between halves of same process: {split} """)
-    print(f"""Original time series is residual: {residuals}""")
     print(f"""Saving ... correlation matrixes: {savecorr}, r-values histogram: {hist}, plot: {plot}""")
     ##############################
     print("Loading timeseries")
     ##############################
+    array_dict={}
     for i in list(range(len(files))):
         print(f"""Loading epi file: {files[i]} while applying mask: {mask}""")
         array_dict[i]=np.transpose(apply_mask(files[i],mask))
@@ -93,19 +93,19 @@ def reliability_analysis(files,mask,sbref,directory=source_directory,
             files[i].replace(files[i].split("_")[-1].split(".")[0],files[i].split("_")[-1].split(".")[0]+str(i))
             if savecorr == True:
                 np.savetxt(files[i].replace(files[i].split("_")[-1],files[i].split("_")[-1].split(".")[0]+"fconnectivity.csv"),corr_dict[i],delimiter=",")
-                print(f""" Functional connectivity for saved as {files[i].replace(files[i].split("_")[-1],files[i].split("_")[-1].split(".")[0]+"fconnectivity.csv"}""")
+                print(f""" Functional connectivity for saved as {files[i].replace(files[i].split("_")[-1],files[i].split("_")[-1].split(".")[0]+"fconnectivity.csv")}""")
     elif len(array_dict) > 1:
         for i in list(range(len(files))):
             corr_dict[i]=np.corrcoef(array_dict[i])
             print(f""" Functional connectivity for computed (pearson correlation) with shape {corr_dict[i].shape}""")
             if savecorr == True:
                 np.savetxt(files[i].replace(files[i].split("_")[-1],files[i].split("_")[-1].split(".")[0]+"fconnectivity.csv"),corr_dict[i],delimiter=",")
-                print(f""" Functional connectivity for saved as {files[i].replace(files[i].split("_")[-1],files[i].split("_")[-1].split(".")[0]+"fconnectivity.csv"}""")
+                print(f""" Functional connectivity for saved as {files[i].replace(files[i].split("_")[-1],files[i].split("_")[-1].split(".")[0]+"fconnectivity.csv")}""")
     perm_volumes=list(combinations(list(range(len(corr_dict))),2))
     print(f""" Calculating reliability for combinations""")
     reliability_dict={}
     for i in range(len(perm_volumes)):
-        reliability_dict[i]=pow(pearsonr(corr_dict[perm_volumes[i][0]]corr_dict[perm_volumes[i][1]]).statistic,2)
+        reliability_dict[i]=pow(pearsonr(corr_dict[perm_volumes[i][0]],corr_dict[perm_volumes[i][1]]).statistic,2)
         print(f"""Reliability calculated for epi combinaiton {1+i}""")
         if make_nifti == True:
             plot_results=unmask(reliability_dict[i],mask)
@@ -116,7 +116,7 @@ def reliability_analysis(files,mask,sbref,directory=source_directory,
             plt.xlabel("Coefficient values")
             plt.ylabel("Frequency")
             fig.suptitle("Reliability coefficients histogram")
-            fig.savefig(files[i].replace(files[perm_volumes[i][0]].split("_")[-1],files[perm_volumes[i][0]].split("_")[-1].split(".")[0]+"_histogram.png")
+            fig.savefig(files[i].replace(files[perm_volumes[i][0]].split("_")[-1],files[perm_volumes[i][0]].split("_")[-1].split(".")[0]+"_histogram.png"))
             plt.close(fig)
 
         if plot == True:
