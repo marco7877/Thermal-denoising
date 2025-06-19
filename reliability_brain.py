@@ -22,6 +22,7 @@ from nilearn.image import (
 from nibabel import Nifti1Image
 from scipy.stats import pearsonr
 import matplotlib.pyplot as plt
+from itertools import combinations
 #import os
 #import argparse
 
@@ -63,88 +64,71 @@ tasks=['task-HABLA1200', 'task-HABLA1700']
 #####################################################################################
 #######################################################################################
 #######################################################################################
-def reliability_analysis(subject,task,methodx,mask,sbref,directory=source_directory,
-        split=True,plot=False,savecorr=False,save=True,hist=True,residuals=False):
+#def reliability_analysis(subject,task,methodx,mask,sbref,directory=source_directory,
+def reliability_analysis(files,mask,sbref,directory=source_directory,
+        split=True,plot=False,savecorr=False,hist=True):
 
     print(f"""Worth double checking! To understand output """)
     print(f"""Computing reliability between halves of same process: {split} """)
     print(f"""Original time series is residual: {residuals}""")
-    print(f"""Saving ... correlation matrixes: {savecorr}, r-values histogram: {hist}, plot: {save}""")
+    print(f"""Saving ... correlation matrixes: {savecorr}, r-values histogram: {hist}, plot: {plot}""")
     ##############################
     print("Loading timeseries")
     ##############################
-    part="OC"
-    if residuals == True:
-        part="residuals"
-    
-    if split == True:
-        file1=directory+"/"+subject+"_ses-1_"+task+"_"+part+"_part-mag_bold_"+methodx+".nii.gz"
-        print(f"""Loading epi file: {file1} while applying mask: {mask}""")
-        epi_mask=apply_mask(file1,mask)
+    for i in list(range(len(files))):
+        print(f"""Loading epi file: {files[i]} while applying mask: {mask}""")
+        array_dict[i]=np.transpose(apply_mask(files[i],mask))
         print(" Data loaded and masked!")
-        epi_mask=np.transpose(epi_mask)
-        shape=epi_mask.shape
-        # splitting volume in two 
+        shape=array_dict[i].shape
         print(f"""Mask: {mask} contains {shape[0]} voxels""")
-        epi_half1=epi_mask[:,:(shape[-1]//2)]
-        epi_half2=epi_mask[:,(shape[-1]//2):]
+    if len(array_dict) == 1:
+        corr_dict={}
+        corr_dict[0]=np.corrcoef(array_dict[0][:,:(shape[-1]//2)])
+        print(f""" Functional connectivity for computed (pearson correlation) with shape {corr_dict[0].shape}""")
+        corr_dict[1]=np.corrcoef(array_dict[0][:,(shape[-1]//2):])
+        print(f""" Functional connectivity for computed (pearson correlation) with shape {corr_dict[1].shape}""")
         print(" Original epi time series divided in two")
-    elif split == False:
-        file1=directory+"/"+subject+"_ses-1_"+task+"_"+part+"_part-mag_bold_"+methodx+"1.nii.gz"
-        file2=directory+"/"+subject+"_ses-1_"+task+"_"+part+"_part-mag_bold_"+methodx+"2.nii.gz"
-        print(f"""Loading epi file: {file1}""")
-        epi_half1=apply_mask(file1,mask)
-        epi_half1=np.transpose(epi_half1)
-        shape1=epi_half1.shape
-        print(f"""Loading epi file: {file2}""")
-        epi_half2=apply_mask(file2,mask)
-        epi_half2=np.transpose(epi_half2)
-        shape2=epi_half2.shape
-        if len(shape1) != len(shape2):
-            raise ValueError(f"--ERROR-- data 1 has {len(shape1)} dimentions, while data 2 has {len(shape2)}")
-        print(f"""Mask: {mask} contains {shape1[0]} voxels""")
-    correlation_matrix_half1=np.corrcoef(epi_half1)
-    print(f""" Functional connectivity for first half computed (pearson correlation) with shape {correlation_matrix_half1.shape}""")
-    correlation_matrix_half2=np.corrcoef(epi_half2)
-    print(f""" Functional connectivity for second half computed (pearson correlation) with shape {correlation_matrix_half2.shape}""")
-    if savecorr == True:
-        file_corr1=directory+"/"+subject+"_ses-1_"+task+"_"+part+"_functional_connectivity_"+methodx+str(split)+"_half1.csv"
-        np.savetxt(file_corr1,correlation_matrix_half1,delimiter=",")
-        print(f""" Functional connectivity for first half saved as {file_corr1}""")
-        file_corr2=directory+"/"+subject+"_ses-1_"+task+"_"+part+"_functional_connectivity_"+methodx+str(split)+"_half2.csv"
-        np.savetxt(file_corr2,correlation_matrix_half2,delimiter=",")
-        print(f""" Functional connectivity for second half saved as {file_corr2}""")
-    #del epi_half1
-    #del epi_half2
-    #del epi_half1_mean
-    #del epi_half2_mean
-    reliability_vector=pearsonr(correlation_matrix_half1, correlation_matrix_half2).statistic
-    if hist == True:
-        fig, ax =plt.subplots(nrows=1,ncols=1)
-        ax.hist(reliability_vector,bins=100,density=True,edgecolor='black')
-        plt.xlabel("Coefficient values")
-        plt.ylabel("Frequency")
-        fig.suptitle("Reliability coefficients histogram")
-        fig.savefig(directory+"/"+subject+"_ses-1_"+task+"_"+part+"_reliability_coefficients_"+methodx+str(split)+"_histogram.png")
-        plt.close(fig)
-    print(f""" Reliability score computed voxel wise between two halves. result has shape: {reliability_vector.shape}""")
-    if save == True:
-        file_reliability=directory+"/"+subject+"_ses-1_"+task+"_"+part+"_functional_connectivity_"+methodx+str(split)+"_reliability.csv"
-        np.savetxt(file_reliability,reliability_vector,delimiter=",")
-        print(f""" Reliability vector saved as {file_reliability}""")
-    if plot == True:
-        plot_results=unmask(reliability_vector,mask)
-        shape=plot_results.shape
-        sbref_epi=load_img(sbref)
-        #sbref_affine=sbref_epi.affine
-        plot_results_affined=Nifti1Image(plot_results.get_fdata(),affine=sbref_epi.affine, header=sbref_epi.header)
-        #plot_results_resampled=resample_to_img(plot_results,sbref_epi, interpolation='linear')
-        #plot_results_resampled2=resample_img(plot_results,target_affine=sbref_epi.affine,target_shape=sbref_epi.shape,interpolation='nearest', force_resample=True,copy_header=False)
-        print("Created new nilearn object to visualize results")
-        #brain_reliability=plot_epi(plot_results_affined,bg_img=sbref_epi,colorbar=True,draw_cross=False,cut_coords=((shape[0]//2),(shape[1]//2),(shape[2]//2)),cmap="inferno",vmin=0,vmax=0.5)
-        title=("Reliability map for "+subject+" "+methodx)
-        brain_reliability=plot_stat_map(plot_results_affined,sbref_epi,colorbar=True,draw_cross=False,title=title,cut_coords=((shape[0]//2),(shape[1]//2),(shape[2]//2)),cmap="inferno",vmin=0,vmax=0.5)
-        brain_reliability.savefig(directory+"/"+subject+"_ses-1_"+task+"_"+part+"_functional_connectivity_"+methodx+str(split)+"_reliability.png")
+        files.append(files[0])
+        for i in range(2):
+            files[i].replace(files[i].split("_")[-1].split(".")[0],files[i].split("_")[-1].split(".")[0]+str(i))
+            if savecorr == True:
+                np.savetxt(files[i].replace(files[i].split("_")[-1],files[i].split("_")[-1].split(".")[0]+"fconnectivity.csv"),corr_dict[i],delimiter=",")
+                print(f""" Functional connectivity for saved as {files[i].replace(files[i].split("_")[-1],files[i].split("_")[-1].split(".")[0]+"fconnectivity.csv"}""")
+    elif len(array_dict) > 1:
+        for i in list(range(len(files))):
+            corr_dict[i]=np.corrcoef(array_dict[i])
+            print(f""" Functional connectivity for computed (pearson correlation) with shape {corr_dict[i].shape}""")
+            if savecorr == True:
+                np.savetxt(files[i].replace(files[i].split("_")[-1],files[i].split("_")[-1].split(".")[0]+"fconnectivity.csv"),corr_dict[i],delimiter=",")
+                print(f""" Functional connectivity for saved as {files[i].replace(files[i].split("_")[-1],files[i].split("_")[-1].split(".")[0]+"fconnectivity.csv"}""")
+    perm_volumes=list(combinations(list(range(len(corr_dict))),2))
+    print(f""" Calculating reliability for combinations""")
+    reliability_dict={}
+    for i in range(len(perm_volumes)):
+        reliability_dict[i]=pow(pearsonr(corr_dict[perm_volumes[i][0]]corr_dict[perm_volumes[i][1]]).statistic,2)
+        print(f"""Reliability calculated for epi combinaiton {1+i}""")
+        if make_nifti == True:
+            plot_results=unmask(reliability_dict[i],mask)
+            plot_results.to_filename(files[perm_volumes[i][0]].replace(files[perm_volumes[i][0]].split("_")[-1].split(".")[0],files[perm_volumes[i][0]].split("_")[-1].split(".")[0]+str(perm_volumes[i][1])+".nii.gz"))
+        if hist == True:
+            fig, ax =plt.subplots(nrows=1,ncols=1)
+            ax.hist(reliability_dict[i],bins=100,density=True,edgecolor='black')
+            plt.xlabel("Coefficient values")
+            plt.ylabel("Frequency")
+            fig.suptitle("Reliability coefficients histogram")
+            fig.savefig(files[i].replace(files[perm_volumes[i][0]].split("_")[-1],files[perm_volumes[i][0]].split("_")[-1].split(".")[0]+"_histogram.png")
+            plt.close(fig)
+
+        if plot == True:
+            plot_results=unmask(reliability_dict[i],mask)
+            shape_epi=plot_results.shape
+            sbref_epi=load_img(sbref)
+            print("Loaded sbref for background: {sbref}")
+            plot_results_affined=Nifti1Image(plot_results.get_fdata(),affine=sbref_epi.affine, header=sbref_epi.header)
+            print("Created new nilearn object to visualize results")
+            title=("Reliability map for "+files[perm_volumes[i][0]].split("_")[0].split("/")[-1]+" "+files[perm_volumes[i][0]].split("_")[-1].split(".")[0])
+            brain_reliability=plot_stat_map(plot_results_affined,sbref_epi,colorbar=True,draw_cross=False,title=title,cut_coords=((shape_epi[0]//2),(shape_epi[1]//2),(shape_epi[2]//2)),cmap="inferno",vmin=0,vmax=0.5)
+            brain_reliability.savefig(files[perm_volumes[i][0]].replace(files[perm_volumes[i][0]].split("_")[-1],files[perm_volumes[i][0]].split("_")[-1].split(".")[0]+"_reliability.png"))
 
 #############################################################################################
 ###### Main      ####################################################################
