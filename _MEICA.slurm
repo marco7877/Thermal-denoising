@@ -1,4 +1,4 @@
-#!/bin/bash -l
+#!/bin/bash -xv
 #SBATCH --partition=general
 #SBATCH --qos=regular
 #SBATCH --job-name=MEICA_WHOLEresiduals_NTVM
