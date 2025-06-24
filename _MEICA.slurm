@@ -83,11 +83,11 @@ else
 	volumes=""
 fi
 
-out_dir=${output}${part}${volume}
-mkdir -p ${out_dir}
-mkdir -p ${output_dir}/t2smap
 
 for volume in "${volumes[@]}"; do
+	out_dir=${output}${part}${volume}
+	mkdir -p ${out_dir}
+	mkdir -p ${output_dir}/t2smap
 	ext=${volume}.nii.gz
 	# Reference original volumes
 	part_mag=${input}/${subj}_ses-1_${task}_echo-1_part-mag_${part}_${method}_mcf_al${ext}
