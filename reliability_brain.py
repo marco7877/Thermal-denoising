@@ -5,6 +5,10 @@ Created on Fri Oct 20 15:23:25 2023
 
 @author: mflores
 """
+
+from itertools import combinations
+
+import matplotlib.pyplot as plt
 import numpy as np
 #from math import prod
 from nilearn.masking import (
