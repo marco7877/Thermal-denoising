@@ -24,6 +24,11 @@ from nilearn.image import (
         resample_to_img
         )
 from nibabel import Nifti1Image
+from nilearn.image import load_img, resample_to_img
+
+# from math import prod
+from nilearn.masking import apply_mask, unmask
+from nilearn.plotting import plot_epi, plot_stat_map, show
 from scipy.stats import pearsonr
 import matplotlib.pyplot as plt
 from itertools import combinations
