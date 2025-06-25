@@ -1,4 +1,4 @@
-#!/bin/bash -l
+#!/bin/bash -mv
 #SBATCH --partition=general
 #SBATCH --qos=regular
 #SBATCH --job-name=goodSignal_mask_union
@@ -16,7 +16,7 @@ module load AFNI/24.3.06-foss-2022a
 
 ${SLURM_ARRAY_TASK_ID}
 n_subs=( "sub-001" "sub-002" "sub-003" "sub-004" "sub-005" )
-methods=( "vanilla" "nordic" "mppca" "nordic_magn" "tmmpca" )
+methods=( "vanilla" "nordic" "mppca" "tmmpca" )
 tasks=( "task-HABLA1200" "task-HABLA1700" )
 counter=0
 volume=""
@@ -47,6 +47,7 @@ dir=/scratch/mflores/Resting_State/${sub}/ses-1/func_preproc
 masks=/scratch/mflores/Resting_State/analysis/${sub}_ses-1_${task}_echo-1_part-mag_brain_mask-bucket.nii.gz
 mask_union=/scratch/mflores/Resting_State/analysis/${sub}_ses-1_${task}_echo-1_part-mag_brain_mask-union.nii.gz
 mask_union_ts=/scratch/mflores/Resting_State/analysis_timeSeries/${sub}_ses-1_${task}_echo-1_part-mag_brain_mask-union.nii.gz
+mask_union_analisis=/scratch/mflores/Resting_State/analysis/${sub}_ses-1_${task}_echo-1_part-mag_brain_mask-union.nii.gz
 for method in "${methods[@]}";do
 	method_mask=${dir}_${method}/tedana_${task}_meicabold${volume}/desc-adaptiveGoodSignal_mask.nii.gz
 	method_mask_binary=${dir}_${method}/tedana_${task}_meicabold${volume}/desc-adaptiveGoodSignal_mask_binary.nii.gz
@@ -55,5 +56,5 @@ for method in "${methods[@]}";do
 ##	masks=${masks}" "${method_mask_binary}
 done
 3dmask_tool -input ${masks} -union -prefix ${mask_union} -overwrite
+ cp ${mask_union} ${mask_union_analisis} 
  cp ${mask_union} ${mask_union_ts} 
-

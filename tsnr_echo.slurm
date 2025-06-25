@@ -1,10 +1,10 @@
-#!/bin/bash -l
+#!/bin/bash -xv 
 #SBATCH --partition=general
 #SBATCH --qos=regular
-#SBATCH --job-name=Metrics_Resting_State_OC_residuals
+#SBATCH --job-name=Metrics_RS
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=10
-#SBATCH --time=00:30:00
+#SBATCH --time=02:00:00
 #SBATCH --mem=16G
 #SBATCH --mail-type=ALL
 #SBATCH --mail-user=mflores@bcbl.eu
@@ -25,10 +25,10 @@ methods=( "vanilla" "hydra" "nordic" "tmmpca" "mppca" )
 #methods=( "nordic" )
 SE="False"
 counter=0
-TSNR="False"
-T2="False"
-R2="False"
-volume=""
+TSNR="True"
+T2="True"
+R2="True"
+halves="True"
 residuals="True"
 for n_sub in "${list_subj[@]}" 
 do
@@ -53,6 +53,14 @@ echo "############# SUBJECT :${n_sub}      #############"
 echo "############# TASK :${task}          #############"
 echo "############# METHOD :${method}            #############"
 echo "##################################################"
+
+if [[ $halves == "True" ]]: then
+	volumes=( "" "1" "2" )
+else
+	volumes=( "" )
+fi
+
+for volume in "${volumes[@]}"; do
 
 # define folders
 subj=sub-${n_sub}
@@ -141,5 +149,9 @@ if [[ $delta_t2 == "True" ]];then
 fi
 
 if [[ $residuals == "True" ]];then
+
+	echo "cp ${dir}/${subj}/ses-1/func_preproc_${method}/tedana_${task}_meicaresiduals${volume}/desc-optcom_bold.nii.gz ${target_timeseries}/${subj}_ses-1_${task}_residuals_part-mag_bold_${method}${volume}.nii.gz"
 	cp ${dir}/${subj}/ses-1/func_preproc_${method}/tedana_${task}_meicaresiduals${volume}/desc-optcom_bold.nii.gz ${target_timeseries}/${subj}_ses-1_${task}_residuals_part-mag_bold_${method}${volume}.nii.gz
 fi
+
+done

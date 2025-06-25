@@ -1,7 +1,7 @@
-#!/bin/bash -l
+#!/bin/bash -xv
 #SBATCH --partition=general
 #SBATCH --qos=regular
-#SBATCH --job-name=MEICA_OC_residuals
+#SBATCH --job-name=MEICA_WHOLEresiduals_NTVM
 #SBATCH --nodes=1
 #SBATCH --cpus-per-task=8
 #SBATCH --time=06:00:00
@@ -12,10 +12,10 @@
 #SBATCH --error=/scratch/mflores/Resting_State/logs/%x_%a_%j.txt
 #SBATCH --output=/scratch/mflores/Resting_State/logs/%x_%a_%j.txt
 
-module load Anaconda3
-source activate /data/mflores/TEDANA/
+#module load Anaconda3
+#source activate /data/mflores/TEDANA/
 
-#module load AFNI
+module load AFNI
 
 
 echo "##################################################"
@@ -23,13 +23,13 @@ echo "MEICA JOB ${SLURM_ARRAY_TASK_ID}"
 echo "##################################################"
 tasks=( "task-HABLA1700" "task-HABLA1200" )
 list_subj=( "003" "001" "002" "004" "005" )
-methods=(  "nordic" "tmmpca" "hydra" "mppca" )
+methods=(  "nordic" "tmmpca" "vanilla" "mppca" )
 #methods=( "nordic" )
-volume=""
 counter=0
 tedana="True"
 t2smap="True"
 residuals="True"
+halves="True"
 # ir residuals == true tedana and t2smap will not be useful
 # Define echo times for each dataset 
 
@@ -69,7 +69,6 @@ subj=sub-${n_sub}
 input=/scratch/mflores/Resting_State/${subj}/ses-1/func_preproc_${method}
 output=/scratch/mflores/Resting_State/${subj}/ses-1/func_preproc_${method}/tedana_${task}_${tree}
 nechoes=4
-ext=${volume}.nii.gz
 
 if [[ ${residuals} = "True" ]];then
 	part="residuals"
@@ -77,65 +76,74 @@ else
 	part="bold"
 fi
 
-out_dir=${output}${part}${volume}
-mkdir -p ${out_dir}
-mkdir -p ${output_dir}/t2smap
+
+if [[ ${halves} = "True" ]];then
+	volumes=( "" "1" "2" )
+else
+	volumes=""
+fi
 
 
-# Reference original volumes
-part_mag=${input}/${subj}_ses-1_${task}_echo-1_part-mag_${part}_${method}_mcf_al${ext}
-echo "My reference part_mag is: ${part_mag}"
+for volume in "${volumes[@]}"; do
+	out_dir=${output}${part}${volume}
+	mkdir -p ${out_dir}
+	mkdir -p ${output_dir}/t2smap
+	ext=${volume}.nii.gz
+	# Reference original volumes
+	part_mag=${input}/${subj}_ses-1_${task}_echo-1_part-mag_${part}_${method}_mcf_al${ext}
+	echo "My reference part_mag is: ${part_mag}"
 
-# Define mask volume and create symbolic link
+	# Define mask volume and create symbolic link
 
-#mask_preproc=${input}/${subj}_ses-1_${task}_run-${run}_part-mag_desc-brain_mask.nii.gz
-mask_preproc=/scratch/mflores/Resting_State/${subj}/ses-1/func_preproc_vanilla/${subj}_ses-1_${task}_echo-1_part-mag_brain_mask.nii.gz
+	#mask_preproc=${input}/${subj}_ses-1_${task}_run-${run}_part-mag_desc-brain_mask.nii.gz
+	mask_preproc=/scratch/mflores/Resting_State/${subj}/ses-1/func_preproc_vanilla/${subj}_ses-1_${task}_echo-1_part-mag_brain_mask.nii.gz
 
-echo "My reference mask is: ${mask_preproc}"
+	echo "My reference mask is: ${mask_preproc}"
 
-# make a list from 1 to 4 with 1 length digits
-echo "List of echoes is ${list_echoes}"
+	# make a list from 1 to 4 with 1 length digits
+	echo "List of echoes is ${list_echoes}"
 
-# generate string with filenames of echoes for tedana
-for n_echo in 2 3 4
-do
-	mag=$part_mag" "${input}/${subj}_ses-1_${task}_echo-${n_echo}_part-mag_${part}_${method}_mcf_al${ext}
-	part_mag=$mag
-done
+	# generate string with filenames of echoes for tedana
+	for n_echo in 2 3 4
+	do
+		mag=$part_mag" "${input}/${subj}_ses-1_${task}_echo-${n_echo}_part-mag_${part}_${method}_mcf_al${ext}
+		part_mag=$mag
+	done
 
-if [[ $residuals == "True" ]];then
-input_weights=/scratch/mflores/Resting_State/${subj}/ses-1/func_preproc_vanilla/tedana_${task}_${tree}bold${volume}
-	echo "##################################################"
-	echo "Making OC from residuals"
-	echo "##################################################"
-mask_preproc=/scratch/mflores/Resting_State/analysis_timeSeries/${subj}_ses-1_${task}_echo-1_part-mag_brain_mask-union.nii.gz
-part_mag1=${input}/${subj}_ses-1_${task}_echo-1_part-mag_${part}_${method}_mcf_al${ext}
-part_mag2=${input}/${subj}_ses-1_${task}_echo-2_part-mag_${part}_${method}_mcf_al${ext}
-part_mag3=${input}/${subj}_ses-1_${task}_echo-3_part-mag_${part}_${method}_mcf_al${ext}
-part_mag4=${input}/${subj}_ses-1_${task}_echo-4_part-mag_${part}_${method}_mcf_al${ext}
-weight_mag1=${input_weights}/${subj}_${task}_OC_echo-1_weight.nii.gz
-weight_mag2=${input_weights}/${subj}_${task}_OC_echo-2_weight.nii.gz
-weight_mag3=${input_weights}/${subj}_${task}_OC_echo-3_weight.nii.gz
-weight_mag4=${input_weights}/${subj}_${task}_OC_echo-4_weight.nii.gz
+	if [[ $residuals == "True" ]];then
+		input_weights=/scratch/mflores/Resting_State/${subj}/ses-1/func_preproc_vanilla/tedana_${task}_${tree}bold
+		echo "##################################################"
+		echo "Making OC from residuals"
+		echo "##################################################"
+		mask_preproc=/scratch/mflores/Resting_State/analysis_timeSeries/${subj}_ses-1_${task}_echo-1_part-mag_brain_mask-union.nii.gz
+		part_mag1=${input}/${subj}_ses-1_${task}_echo-1_part-mag_${part}_${method}_mcf_al${ext}
+		part_mag2=${input}/${subj}_ses-1_${task}_echo-2_part-mag_${part}_${method}_mcf_al${ext}
+		part_mag3=${input}/${subj}_ses-1_${task}_echo-3_part-mag_${part}_${method}_mcf_al${ext}
+		part_mag4=${input}/${subj}_ses-1_${task}_echo-4_part-mag_${part}_${method}_mcf_al${ext}
+		weight_mag1=${input_weights}/${subj}_${task}_OC_echo-1_weight.nii.gz
+		weight_mag2=${input_weights}/${subj}_${task}_OC_echo-2_weight.nii.gz
+		weight_mag3=${input_weights}/${subj}_${task}_OC_echo-3_weight.nii.gz
+		weight_mag4=${input_weights}/${subj}_${task}_OC_echo-4_weight.nii.gz
 
-3dcalc -a ${part_mag1} -b ${part_mag2} -c ${part_mag3} -d ${part_mag4} -e ${weight_mag1} -f ${weight_mag2} -g ${weight_mag3} -h ${weight_mag4} -m ${mask_preproc}  -expr '(a*e+b*f+c*g+d*h)*m' -prefix /scratch/mflores/Resting_State/${subj}/ses-1/func_preproc_${method}/tedana_${task}_${tree}${part}${volume}/desc-optcom_bold.nii.gz -overwrite 
+		3dcalc -a ${part_mag1} -b ${part_mag2} -c ${part_mag3} -d ${part_mag4} -e ${weight_mag1} -f ${weight_mag2} -g ${weight_mag3} -h ${weight_mag4} -m ${mask_preproc}  -expr '(a*e+b*f+c*g+d*h)*m' -prefix /scratch/mflores/Resting_State/${subj}/ses-1/func_preproc_${method}/tedana_${task}_${tree}${part}${volume}/desc-optcom_bold.nii.gz -overwrite 
 	else
 
-if [[ $tedana == "True" ]];then
-	echo "##################################################"
-	echo "tedana -d ${mag} -e ${echo_times} --out-dir ${out_dir} --tree ${tree} --verbose --debug True --mask ${mask_preproc}  --overwrite"
-	echo "##################################################"
+		if [[ $tedana == "True" ]];then
+			echo "##################################################"
+			echo "tedana -d ${mag} -e ${echo_times} --out-dir ${out_dir} --tree ${tree} --verbose --debug True --mask ${mask_preproc}  --overwrite"
+			echo "##################################################"
 
-	tedana -d ${mag} -e ${echo_times} --out-dir ${out_dir} --tree ${tree} --verbose --debug --mask ${mask_preproc} --masktype none --fittype loglin --overwrite
+			tedana -d ${mag} -e ${echo_times} --out-dir ${out_dir} --tree ${tree} --verbose --debug --mask ${mask_preproc} --masktype none --fittype loglin --overwrite
 
-	rmdir --ignore-fail-on-non-empty ${out_dir}
-fi
-if [[ $t2smap == "True" ]];then
-	echo "##################################################"
-	echo "t2smap -d ${mag} -e ${echo_times} --out-dir ${out_dir}/t2smap${volume} --mask ${mask_preproc} --masktype none --fittype loglin --fitmode ts"
-	echo "##################################################"
-	t2smap -d ${mag} -e ${echo_times} --out-dir ${out_dir}/t2smap${volume} --mask ${mask_preproc} --masktype none --fittype loglin --fitmode ts 
+			rmdir --ignore-fail-on-non-empty ${out_dir}
+		fi
+		if [[ $t2smap == "True" ]];then
+			echo "##################################################"
+			echo "t2smap -d ${mag} -e ${echo_times} --out-dir ${out_dir}/t2smap${volume} --mask ${mask_preproc} --masktype none --fittype loglin --fitmode ts"
+			echo "##################################################"
+			t2smap -d ${mag} -e ${echo_times} --out-dir ${out_dir}/t2smap${volume} --mask ${mask_preproc} --masktype none --fittype loglin --fitmode ts 
 
-	rmdir --ignore-fail-on-non-empty ${out_dir}/t2smap${volume}
-fi
-fi
+			rmdir --ignore-fail-on-non-empty ${out_dir}/t2smap${volume}
+		fi
+	fi
+done
