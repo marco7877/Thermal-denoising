@@ -137,9 +137,17 @@ def reliability_analysis(files,mask,sbref,plot=True,savecorr=False,hist=True,mak
             brain_reliability=plot_stat_map(plot_results_affined,sbref_epi,colorbar=True,draw_cross=False,title=title,cut_coords=((shape_epi[0]//2),(shape_epi[1]//2),(shape_epi[2]//2)),cmap="inferno",vmin=0,vmax=0.5)
             brain_reliability.savefig(files[perm_volumes[i][0]].replace(files[perm_volumes[i][0]].split("_")[-1],files[perm_volumes[i][0]].split("_")[-1].split(".")[0]+str(perm_volumes[i][0])+str(perm_volumes[i][1])+"_reliability.png"))
 
-#############################################################################################
-###### Main      ####################################################################
-#####################################################################################
+
+#################
+###### Main      ##############################
+###############################################
+
+
+source_dir = "/bcbl/home/public/MarcoMotion/Resting_State/analysis_timeSeries"
+methods = ["vanilla", "nordic", "tmmpca", "mppca", "nordic", "hydra"]
+subjects = ["sub-001", "sub-002", "sub-003", "sub-004", "sub-005"]
+tasks = ["task-HABLA1200", "task-HABLA1700"]
+
 for subject in subjects:
     for task in tasks:
         for method in methods:
