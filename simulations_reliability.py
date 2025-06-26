@@ -59,6 +59,7 @@ def reliability_simulated(
     corr_dict = {}
     reliability_dict = {}
     np.random.seed(seed)
+    rng = np.random.default_rng()
     print("Worth double checking! To understand output ")
     print(
             f"Saving ... correlation matrixes: {savecorr}, r-values histogram: {hist}, plot: {plot}"
@@ -218,7 +219,7 @@ sbref = (
 try:
     epi = [base_name + "_OC_part-mag_bold_" + method + ".nii.gz"]
     print("LOG: Attempting SIMULATION, reliability analysis")
-    reliability_analysis(100, epi, mask, sbref)
+    reliability_simulated(100, epi, mask, sbref)
 except Exception:
         print(
                 f"ERROR: {subject}, task:{task}, and method:{method} one time series"
