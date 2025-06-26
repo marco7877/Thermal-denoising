@@ -54,7 +54,7 @@ echo "############# TASK :${task}          #############"
 echo "############# METHOD :${method}            #############"
 echo "##################################################"
 
-if [[ $halves == "True" ]]: then
+if [[ $halves == "True" ]]; then
 	volumes=( "" "1" "2" )
 else
 	volumes=( "" )

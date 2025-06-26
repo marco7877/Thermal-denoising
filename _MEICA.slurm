@@ -1,7 +1,7 @@
 #!/bin/bash -xv
 #SBATCH --partition=general
 #SBATCH --qos=regular
-#SBATCH --job-name=MEICA_WHOLEresiduals_NTVM
+#SBATCH --job-name=MEICA_WHOLEOC_NTVM
 #SBATCH --nodes=1
 #SBATCH --cpus-per-task=8
 #SBATCH --time=06:00:00
@@ -12,10 +12,10 @@
 #SBATCH --error=/scratch/mflores/Resting_State/logs/%x_%a_%j.txt
 #SBATCH --output=/scratch/mflores/Resting_State/logs/%x_%a_%j.txt
 
-#module load Anaconda3
-#source activate /data/mflores/TEDANA/
+module load Anaconda3
+source activate /data/mflores/TEDANA/
 
-module load AFNI
+#module load AFNI
 
 
 echo "##################################################"

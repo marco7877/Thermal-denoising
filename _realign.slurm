@@ -5,7 +5,7 @@
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=16
 #SBATCH --time=01:30:00
-#SBATCH --array=1-10
+#SBATCH --array=1-30
 #SBATCH --mem=16G
 #SBATCH --mail-type=ALL,ARRAY_TASKS
 #SBATCH --mail-user=mflores@bcbl.eu
@@ -19,13 +19,13 @@ module load AFNI
 
 tasks=("task-HABLA1700" "task-HABLA1200")
 list_subj=("sub-001" "sub-002" "sub-003" "sub-004" "sub-005")
-#methods=( "tmmpca" "nordic" "mppca" "hydra" )
-methods=( "vanilla" )
+methods=( "tmmpca" "nordic" "mppca" )
+#methods=( "vanilla" )
 # In case of halves, rememberthat extension == ?.nii.gz
 counter=0
 nechoes=4
-residuals="False"
-trans_matrix="True"
+residuals="True"
+trans_matrix="False"
 halves="True"
 echo My task ID is"${SLURM_ARRAY_TASK_ID}"
 

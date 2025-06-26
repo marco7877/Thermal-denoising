@@ -16,7 +16,7 @@ module load AFNI/24.3.06-foss-2022a
 
 ${SLURM_ARRAY_TASK_ID}
 n_subs=( "sub-001" "sub-002" "sub-003" "sub-004" "sub-005" )
-methods=( "vanilla" "nordic" "mppca" "tmmpca" )
+methods=( "vanilla" "nordic" "mppca" "tmmpca" "hydra" )
 tasks=( "task-HABLA1200" "task-HABLA1700" )
 counter=0
 volume=""

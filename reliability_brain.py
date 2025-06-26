@@ -50,11 +50,6 @@ from scipy.stats import pearsonr
 ###############################################
 ###### Functions ##############################
 ###############################################
-###########
-###########
-# def reliability_analysis(subject,task,methodx,mask,sbref,directory=source_dir,
-
-
 def reliability_analysis(
     epi_fname, mask, sbref, plot=True, savecorr=False, hist=True, make_nifti=True
 ):
@@ -88,7 +83,7 @@ def reliability_analysis(
             f"Functional connectivity for computed (pearson correlation) with shape {corr_dict[1].shape}"
         )
         print(" Original epi time series divided in two")
-        perm_volumes = list(combinations(list(range(len(corr_dict))), 2))
+        perm_volumes = list(combinations(range(len(corr_dict)), 2))
         epi_fname.append(epi_fname[0])
 
         for i in range(2):
@@ -117,6 +112,7 @@ def reliability_analysis(
 
     elif len(array_dict) > 1:
         # Multiple runs, compute correlation for each
+        perm_volumes = list(combinations(range(len(array_dict)), 2))
         for i in list(range(len(epi_fname))):
             base_fname = epi_fname[i].split("_")[-1]
             corr_dict[i] = np.corrcoef(array_dict[i])
@@ -124,7 +120,6 @@ def reliability_analysis(
                 f"Functional connectivity for computed (pearson correlation) with shape {corr_dict[i].shape}"
             )
             # TODO should this be corr_dict[i]
-            perm_volumes = list(combinations(list(range(len(corr_dict))), 2))
             if savecorr:
                 np.savetxt(
                     epi_fname[i].replace(
