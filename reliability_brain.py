@@ -180,6 +180,17 @@ def reliability_analysis(
                 )
             )
             plt.close(fig)
+            np.savetxt(
+                    epi_fname[i].replace(
+                        base_fname,
+                        base_fname.split(".")[0]
+                        + str(perm_volumes[i][0])
+                        + str(perm_volumes[i][1])
+                        + "_reliability.csv",
+                    ),
+                    reliability_dict[i],
+                    delimiter=",",
+                )
 
         if plot:
             plot_results = unmask(reliability_dict[i], mask)
