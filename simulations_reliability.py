@@ -81,10 +81,10 @@ def reliability_simulated(
 
     for i in range(simulations_number):
         corr_dict[i] = np.corrcoef(abs(rng.normal(mu,sigma,shape)))
-            print(
-                    f"Functional connectivity for computed (pearson correlation) with shape {corr_dict[i].shape}"
+        print(
+                f"Functional connectivity for computed (pearson correlation) with shape {corr_dict[i].shape}"
 
-                    )
+                )
             # TODO should this be corr_dict[i]
             if savecorr:
                 np.savetxt(
