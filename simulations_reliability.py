@@ -219,7 +219,7 @@ sbref = (
 try:
     epi = base_name + "_OC_part-mag_bold_" + method + ".nii.gz"
     print("LOG: Attempting SIMULATION, reliability analysis")
-    reliability_simulated(100, epi, mask, sbref)
+    reliability_simulated(10, epi, mask, sbref)
 except Exception:
         print(
                 f"ERROR: {subject}, task:{task}, and method:{method} one time series"
