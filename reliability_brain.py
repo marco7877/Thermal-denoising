@@ -7,13 +7,10 @@ Created on Fri Oct 20 15:23:25 2023
 """
 
 from itertools import combinations
-
 import matplotlib.pyplot as plt
 import numpy as np
 from nibabel import Nifti1Image
 from nilearn.image import load_img, resample_to_img
-
-# from math import prod
 from nilearn.masking import apply_mask, unmask
 from nilearn.plotting import plot_epi, plot_stat_map, show
 from scipy.stats import pearsonr
