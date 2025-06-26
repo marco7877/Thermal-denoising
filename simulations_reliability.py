@@ -196,7 +196,7 @@ def reliability_simulated(
 
 source_dir = "/scratch/mflores/Resting_State/analysis_timeSeries"
 
-methods = "vanilla"
+method = "vanilla"
 
 subject = "sub-001"
 
@@ -219,7 +219,7 @@ try:
     epi = [base_name + "_OC_part-mag_bold_" + method + ".nii.gz"]
     print("LOG: Attempting SIMULATION, reliability analysis")
     reliability_analysis(100, epi, mask, sbref)
-    except Exception:
-            print(
-                    f"ERROR: {subject}, task:{task}, and method:{method} one time series"
-                    )
+except Exception:
+        print(
+                f"ERROR: {subject}, task:{task}, and method:{method} one time series"
+                )
