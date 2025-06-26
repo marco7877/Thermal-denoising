@@ -68,7 +68,7 @@ def reliability_simulated(
     print("Getting timeseries shape")
     ##############################
 
-    print(f"Loading epi file: {epi_fname[i]} while applying mask: {mask}")
+    print(f"Loading epi file: {epi_fname} while applying mask: {mask}")
     array_dict[0] = np.transpose(apply_mask(epi_fname, mask))
     print(" Data loaded and masked!")
     shape = array_dict[0].shape
