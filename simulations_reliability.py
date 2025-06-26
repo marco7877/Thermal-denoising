@@ -217,7 +217,7 @@ sbref = (
 
             # EPI, Simulate
 try:
-    epi = [base_name + "_OC_part-mag_bold_" + method + ".nii.gz"]
+    epi = base_name + "_OC_part-mag_bold_" + method + ".nii.gz"
     print("LOG: Attempting SIMULATION, reliability analysis")
     reliability_simulated(100, epi, mask, sbref)
 except Exception:
