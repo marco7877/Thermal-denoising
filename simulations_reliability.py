@@ -195,7 +195,7 @@ def reliability_simulated(
 ###############################################
 
 
-source_dir = "/scratch/mflores/Resting_State/analysis_timeSeries"
+source_dir = "/bcbl/home/public/MarcoMotion/Resting_State/analysis_timeSeries"
 
 method = "vanilla"
 
@@ -208,7 +208,7 @@ base_name = source_dir + "/" + subject + "_ses-1_" + task
 mask = base_name + "_echo-1_part-mag_gm_mask-union.nii.gz"
 
 sbref = (
-        "/scratch/mflores/Resting_State/analysis/"
+        "/bcbl/home/public/MarcoMotion/Resting_State/analysis/"
         + subject
         + "_ses-1_"
         + task
