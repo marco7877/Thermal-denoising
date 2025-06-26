@@ -86,27 +86,28 @@ def reliability_simulated(
 
                 )
             # TODO should this be corr_dict[i]
-            if savecorr:
-                np.savetxt(
-                        epi_fname.replace(
-                            base_fname,
-                            base_fname.split(".")[0]
-                            + str(i)
-                            + "simulated_connectivity.csv",
-                            ),
-                        corr_dict[i],
-                        delimiter=",",
-                        )
-                print(
-                        f"Functional connectivity saved as {epi_fname.replace(
+        if savecorr:
+            np.savetxt(
+                    epi_fname.replace(
                         base_fname,
                         base_fname.split(".")[0]
                         + str(i)
                         + "simulated_connectivity.csv",
-                    )}"
+                        ),
+                    corr_dict[i],
+                    delimiter=",",
+                        )
+            print(
+                    f"Functional connectivity saved as {
+                    epi_fname.replace(
+                    base_fname,
+                    base_fname.split(".")[0]
+                    + str(i)
+                    + "simulated_connectivity.csv",
                     )
+                    }")
 
-                perm_volumes = list(combinations(range(len(corr_dict)), 2)) 
+    perm_volumes = list(combinations(range(len(corr_dict)), 2)) 
     print(f" Calculating reliability for {len(perm_volumes)} combinations")
 
     for i in range(len(perm_volumes)):
