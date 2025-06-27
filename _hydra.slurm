@@ -195,7 +195,7 @@ fi
 	temp_nordic=$(mktemp ${output}/tmp/nordicXXXXXX.m)
 	
 	echo "*************************************************************"
-	echo "addpath(genpath('/home/mflores/nordic'));cd '${repo}';ARG.temporal_phase=1;ARG.noise_volume_last=${noise};ARG.phase_filter_width=10;ARG.save_add_info=1;ARG.save_gfactor_map=${save_gfactor};ARG.DIROUT='${output}';NIFTI_NORDIC('${output}/${subj}_ses-1_${task}_echoes_part-mag_bold_${method}_dsd${ext}.nii.gz','${output}/${subj}_ses-1_${task}_echoes_part-phase_bold_${method}_dsd${ext}.nii.gz','${subj}_ses-1_${task}_echoes_part-mag_bold_${method}${ext}',ARG);" > $temp_nordic
+	echo "addpath(genpath('/home/mflores/nordic'));cd '${repo}';ARG.temporal_phase=1;ARG.noise_volume_last=${noise};ARG.phase_filter_width=10;ARG.save_add_info=1;ARG.save_gfactor_map=${save_gfactor};ARG.DIROUT='${output}/';NIFTI_NORDIC('${output}/${subj}_ses-1_${task}_echoes_part-mag_bold_${method}_dsd${ext}.nii.gz','${output}/${subj}_ses-1_${task}_echoes_part-phase_bold_${method}_dsd${ext}.nii.gz','${subj}_ses-1_${task}_echoes_part-mag_bold_${method}${ext}',ARG);" > $temp_nordic
 
 	matlab -batch "run('$temp_nordic');exit" 
 
