@@ -80,7 +80,7 @@ do
 		3dcalc -a "${origin}/${subj}_ses-1_${task}_echo-${n_echo}_${parts}_bold.nii.gz[${trimvol}..$]" -expr 'a' \
 			-prefix "${output}/${subj}_ses-1_${task}_echo-${n_echo}_${parts}_bold_${method}_dsd.nii.gz" -overwrite
 
-		if [[ "${method}" == "vanilla" || "${method}" == "tmmpca" || "${method}" == "mppca" ]]
+		if [[ "${method}" == "vanilla" || "${method}" == "tmppca" || "${method}" == "mppca" ]]
 		then
 
 			echo "3dinfo -nvi ${origin}/${subj}_ses-1_${task}_echo-${n_echo}_${parts}_bold.nii.gz"
