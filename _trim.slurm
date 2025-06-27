@@ -1,12 +1,12 @@
 #!/bin/bash
 #SBATCH --partition=general
 #SBATCH --qos=regular
-#SBATCH --job-name=trim_vanilla-hydra-mppca-tmppca
+#SBATCH --job-name=trim_hydra-nordic
 #SBATCH --nodes=1
 #SBATCH --cpus-per-task=8
 #SBATCH --time=01:20:00
 #SBATCH --mem=8G
-#SBATCH --array=1-40
+#SBATCH --array=1-20
 #SBATCH --mail-type=ALL,ARRAY_TASKS
 #SBATCH --mail-user=mflores@bcbl.eu
 #SBATCH --error=/scratch/mflores/Resting_State/logs/%x_%a_%j.txt
@@ -21,7 +21,7 @@ tasks=( "task-HABLA1200" "task-HABLA1700" )
 list_subj=( "003" "001" "002" "004" "005" )
 #list_subj=( "01" "02" "03" "04" "06" "07" "08" "09" "11" "12" "14" "15" "16" "18" "19" "20" "21" )
 #runs=( 1 2 )
-methods=( "vanilla" "hydra" "mppca" "tmmpca" )
+methods=( "nordic" "hydra" )
 counter=0
 trimvol=0 # number of volumes to trim due to steaty state magnetization
 
