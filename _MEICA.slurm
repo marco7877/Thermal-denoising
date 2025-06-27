@@ -130,10 +130,10 @@ for volume in "${volumes[@]}"; do
 
 		if [[ $tedana == "True" ]];then
 			echo "##################################################"
-			echo "tedana -d ${mag} -e ${echo_times} --out-dir ${out_dir} --tree ${tree} --verbose --debug True --mask ${mask_preproc}  --overwrite"
+			echo "tedana -d ${mag} -e ${echo_times} --out-dir ${out_dir} --tree ${tree}  --debug True --mask ${mask_preproc}  --overwrite"
 			echo "##################################################"
 
-			tedana -d ${mag} -e ${echo_times} --out-dir ${out_dir} --tree ${tree} --verbose --debug --mask ${mask_preproc} --masktype none --fittype loglin --overwrite
+			tedana -d ${mag} -e ${echo_times} --out-dir ${out_dir} --tree ${tree}  --debug --mask ${mask_preproc} --masktype none --fittype loglin --overwrite
 
 			rmdir --ignore-fail-on-non-empty ${out_dir}
 		fi
