@@ -1,12 +1,12 @@
 #!/bin/bash
 #SBATCH --partition=general
 #SBATCH --qos=regular
-#SBATCH --job-name=ReconAll2
+#SBATCH --job-name=ReconAll_restingState
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=16
 #SBATCH --time=11:00:00
 #SBATCH --mem=80G
-#SBATCH --array=1-2
+#SBATCH --array=1-5
 #SBATCH --mail-type=ALL
 #SBATCH --mail-user=mflores@bcbl.eu
 #SBATCH --error=/scratch/mflores/Resting_State/logs/%x_%a_%j.txt
@@ -18,7 +18,7 @@ module load FreeSurfer
 echo "##################################################"
 echo "Reconall FRESURFER JOB ${SLURM_ARRAY_TASK_ID}"
 echo "##################################################"
-list_subj=( "002" "003" )
+list_subj=( "001" "002" "003" "004" "005" )
 counter=0
 for n_sub in "${list_subj[@]}" 
 do
@@ -37,12 +37,20 @@ echo "############# SUBJECT :${n_sub}      #############"
 echo "##################################################"
 
 
-PRJDIR=/scratch/mflores/Resting_State
-
+dataset=Resting_State
+PRJDIR_SOURCE=/data/mflores/${dataset}
+PRJDIR=/scratch/mflores/${dataset}
 subj=sub-${n_sub}
 
 # run Freesurfer recon-all to separate white matter from gray one. For this we are using both the T1 and the T2
 # TODO study Freesurfer
+
+
+mkdir -p ${PRJDIR}/freesurfer
+mkdir -p ${PRJDIR}/logs
+
+cp -as $PRJDIR_SOURCE $PRJDIR
+
 recon-all -i ${PRJDIR}/${subj}/ses-1/anat/${subj}_ses-1_acq-uniclean_T1w.nii.gz -T2 ${PRJDIR}/${subj}/ses-1/anat/${subj}_ses-1_T2w.nii.gz -3T -all -s ${subj} -sd ${PRJDIR}/freesurfer
 # Import Freesurfer results into SUMA-land 
 # TODO study SUMA
