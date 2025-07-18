@@ -1,46 +1,49 @@
 #!/bin/bash
 #SBATCH --partition=general
 #SBATCH --qos=regular
-#SBATCH --job-name=trim_hydra-nordic
+#SBATCH --job-name=trim_all_MEVOTLOC
 #SBATCH --nodes=1
 #SBATCH --cpus-per-task=8
 #SBATCH --time=01:20:00
 #SBATCH --mem=8G
-#SBATCH --array=1-20
+#SBATCH --array=1-48
 #SBATCH --mail-type=ALL,ARRAY_TASKS
 #SBATCH --mail-user=mflores@bcbl.eu
-#SBATCH --error=/scratch/mflores/Resting_State/logs/%x_%a_%j.txt
-#SBATCH --output=/scratch/mflores/Resting_State/logs/%x_%a_%j.txt
+#SBATCH --error=/scratch/mflores/MEVOTLOC/logs/%x_%a_%j.txt
+#SBATCH --output=/scratch/mflores/MEVOTLOC/logs/%x_%a_%j.txt
 
 module load AFNI
 
 echo "##################################################"
 echo "MEICA JOB ${SLURM_ARRAY_TASK_ID}"
 echo "##################################################"
-tasks=( "task-HABLA1200" "task-HABLA1700" )
-list_subj=( "003" "001" "002" "004" "005" )
+tasks=( "task-fLoc" )
+list_subj=( "001" )
 #list_subj=( "01" "02" "03" "04" "06" "07" "08" "09" "11" "12" "14" "15" "16" "18" "19" "20" "21" )
-#runs=( 1 2 )
-methods=( "nordic" "hydra" )
+runs=( "1" "2" "3" "4" "5" "6" "7" "8" )
+methods=( "nordic" "hydra" "mppca" "tmppca" "vanilla" "hydra")
 counter=0
 trimvol=0 # number of volumes to trim due to steaty state magnetization
 
 noise=3 # number of noise volumes
 halves="True"
-nechoes=4
+nechoes=3
 
 for n_sub in "${list_subj[@]}" 
 do
-	for task in "${tasks[@]}"
+	for tsk in "${tasks[@]}"
 	do
 		for method in "${methods[@]}"
 		do
-			((counter++))
-			if [[ $counter -eq ${SLURM_ARRAY_TASK_ID} ]]; then
-				echo "Reached expected permutation value: ${SLURM_ARRAY_TASK_ID}"
-				break 3
+			for run in "${runs[@]}"
+			do
+				((counter++))
+				if [[ $counter -eq ${SLURM_ARRAY_TASK_ID} ]]; then
+					echo "Reached expected permutation value: ${SLURM_ARRAY_TASK_ID}"
+					break 4
 
-			fi
+				fi
+			done
 		done
 	done
 done
@@ -49,18 +52,20 @@ done
 
 echo "##################################################"
 echo "############# SUBJECT :${n_sub}      #############"
-echo "############# TASK :${task}          #############"
+echo "############# TASK :${tsk}          #############"
+echo "############# RUN :${run}          #############"
 echo "############# METHOD :${method}            #############"
 echo "##################################################"
 
+task=${tsk}_run-${run}
 
 #method=vanilla # vanilla, nordic, hydra 
 preproc=func_preproc_${method} # better without the  
 subj=sub-${n_sub}
 # define folders
 
-origin=/data/HABLA/Resting_State/${subj}/ses-1/func
-output=/scratch/mflores/Resting_State/${subj}/ses-1/${preproc}
+origin=/data/HABLA/MEVOTLOC/${subj}/ses-1/func
+output=/scratch/mflores/MEVOTLOC/${subj}/ses-1/${preproc}
 
 
 # MAIN
