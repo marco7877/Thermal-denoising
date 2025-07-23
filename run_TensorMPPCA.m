@@ -30,8 +30,7 @@ tensor_nii=cat(5,nii1,nii2,nii3);
 %tensor_nii=cat(5,nii1,nii2,nii3,nii4);
 %running tensor MP-PCA
 disp(append("Denoising magnitude valumes from subject: ",sub));
-[denoised,Sigma2,P,SNR_gain]=denoise_recursive_tensor(tensor_nii, [5 5], indices={1:3 3 5});
-%%[denoised,Sigma2,P,SNR_gain]=denoise_recursive_tensor(tensor_nii, [5 5], indices={1:3 4 5});
+[denoised,Sigma2,P,SNR_gain]=denoise_recursive_tensor(tensor_nii, [5 5], indices={1:3 4 5});
 % deconcatenating nifti files
 disp("Denoising finishes");
 nii1_denoised=denoised(:,:,:,:,1);
