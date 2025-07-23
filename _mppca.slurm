@@ -29,7 +29,7 @@ nechoes=3
 counter=0
 for sub_label in "${list_sub[@]}" 
 do
-	for task in "${list_task[@]}"
+	for tsk in "${list_task[@]}"
 	do
 		for run in "${runs[@]}"
 		do
@@ -57,13 +57,15 @@ else
 fi
 for half in "${halves[@]}"
 do
+directory=/data/mflores/MEVOTLOC
 mppca="/home/mflores/Thermal-denoising/mppca.m"
 temp_mppca=$(mktemp ~/mppcaXXXXXX.m)
-origin=/data/mflores/MEVOTLOC/${subj}/ses-1/func_preproc_vanilla
+origin=${directory}/${subj}/ses-1/func_preproc_vanilla
 output=/scratch/mflores/MEVOTLOC/${subj}/ses-1/func_preproc_${method}
 
 sed "s+SUBJECT+"${subj}"+;" $mppca>${temp_mppca}.e
-sed "s+HALF+"${half}"+;" ${temp_mppca}.e>${temp_mppca}.ee
+sed "s+DIRECTORY+"${directory}"+;" ${temp_mppca}.e>${temp_mppca}.i
+sed "s+HALF+"${half}"+;" ${temp_mppca}.i>${temp_mppca}.ee
 sed "s+TASK+"${task}"+;" ${temp_mppca}.ee>$temp_mppca
 
 matlab -batch "run('$temp_mppca');exit" 
