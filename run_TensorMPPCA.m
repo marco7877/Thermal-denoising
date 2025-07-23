@@ -3,7 +3,7 @@ sub="SUBJECT";
 disp(append("Analizing subject: ",sub));
 
 file=append("DIRECTORY/",sub,"/ses-1/func_preproc_tmppca/",sub,"_ses-1_TASK_echo-");
-part="_part-mag_bold_tmmpca_dsd";
+part="_part-mag_bold_tmppca_dsd";
 ext="HALF.nii.gz";
 mag1=append(file,"1",part,ext);
 mag2=append(file,"2",part,ext);
