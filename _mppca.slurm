@@ -43,6 +43,7 @@ do
 	done
 done
 done
+
 subj=sub-$sub_label
 
 task=${tsk}_run-${run}
@@ -63,10 +64,12 @@ temp_mppca=$(mktemp ~/mppcaXXXXXX.m)
 origin=${directory}/${subj}/ses-1/func_preproc_vanilla
 output=/scratch/mflores/MEVOTLOC/${subj}/ses-1/func_preproc_${method}
 
+mkdir -p ${output}
+
 SUBJECT=$(cat ${mppca} | sed s/SUBJECT/"${subj}"/g)
-DIRECTORY=$(echo ${SUBJECT} | sed s/DIRECTORY/"${directory}"/g)
-HALF=$(echo ${DIRECTORY} | sed s/HALF/"${half}"/g)
-echo ${HALF} | sed s/TASK/"${task}"/g >$temp_mppca
+DIRECTORY=$(echo "$SUBJECT" | sed s,DIRECTORY,"${directory}",g)
+HALF=$(echo "$DIRECTORY" | sed s/HALF/"${half}"/g)
+echo "$HALF" | sed s/TASK/"${task}"/g >$temp_mppca
 #sed "s+SUBJECT+"${subj}"+;" $mppca>${temp_mppca}.e
 #sed "s+DIRECTORY+"${directory}"+;" ${temp_mppca}.e>${temp_mppca}.i
 #sed "s+HALF+"${half}"+;" ${temp_mppca}.i>${temp_mppca}.ee
