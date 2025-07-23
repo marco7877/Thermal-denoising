@@ -1,7 +1,7 @@
 addpath("/home/mflores/mppca_denoise/");
 sub="SUBJECT";
 disp(append("Analizing subject: ",sub));
-file=append("/data/mflores/Resting_State/",sub,"/ses-1/func_preproc_mppca/",sub,"_ses-1_TASK_echo-");
+file=append("DIRECTORY/",sub,"/ses-1/func_preproc_mppca/",sub,"_ses-1_TASK_echo-");
 part="_part-mag_bold_mppca_dsd";
 ext="HALF.nii.gz";
 mag1=append(file,"1",part,ext);
