@@ -49,7 +49,7 @@ preproc=func_preproc_${method}
 subj=sub-${n_sub}
 task=${tsk}_run-${run}
 repo=/home/mflores/scripts
-origin=/scratch/mflores/MEVOTLOC/${subj}/ses-1/func_preproc_vanilla
+origin=/data/mflores/MEVOTLOC/${subj}/ses-1/func_preproc_vanilla
 output=/scratch/mflores/MEVOTLOC/${subj}/ses-1/${preproc}
 noise=3 # number of noise volumes
 save_gfactor=1 # save gfactor map = 1 (saves gfactor and runs nordic); = 2 (saves gfactor and stops)  
@@ -69,11 +69,11 @@ mkdir -p ${output}/tmp
 
 echo "*************************************************************"
 # Reference outputal volumnes
-part_mag=${output}/${subj}_ses-1_${task}_echo-1_part-mag_bold_${method}_dsd.nii.gz
+part_mag=/data/mflores/MEVOTLOC/${subj}/ses-1/${preproc}/${subj}_ses-1_${task}_echo-1_part-mag_bold_${method}_dsd.nii.gz
 
 echo "My reference part_mag is: ${part_mag}"
 
-part_phase=${output}/${subj}_ses-1_${task}_echo-1_part-phase_bold_${method}_dsd.nii.gz
+part_phase=/data/mflores/MEVOTLOC/${subj}/ses-1/${preproc}/${subj}_ses-1_${task}_echo-1_part-phase_bold_${method}_dsd.nii.gz
 
 echo "My reference part_phase is: ${part_phase}"
 
@@ -96,9 +96,9 @@ for n_echo in "${list_aggregate[@]}"
 
 do
 
-	mag=$part_mag" "${output}/${subj}_ses-1_${task}_echo-${n_echo}_part-mag_bold_${method}_dsd.nii.gz
+	mag=$part_mag" "/data/mflores/MEVOTLOC/${subj}/ses-1/${preproc}/${subj}_ses-1_${task}_echo-${n_echo}_part-mag_bold_${method}_dsd.nii.gz
 
-	phase=$part_phase" "${output}/${subj}_ses-1_${task}_echo-${n_echo}_part-phase_bold_${method}_dsd.nii.gz
+	phase=$part_phase" "/data/mflores/MEVOTLOC/${subj}/ses-1/${preproc}/${subj}_ses-1_${task}_echo-${n_echo}_part-phase_bold_${method}_dsd.nii.gz
 
 	part_mag=$mag
 
@@ -117,7 +117,7 @@ echo "Phase volumes to concatenate are: $part_phase"
 
 if [[ $halves == "True" ]]; then
 
-	volumes=$(3dinfo -nvi ${output}/${subj}_ses-1_${task}_echoes_part-mag_bold_${method}_dsd.nii.gz)
+	volumes=$(3dinfo -nvi /data/mflores/MEVOTLOC/${subj}/ses-1/${preproc}/${subj}_ses-1_${task}_echoes_part-mag_bold_${method}_dsd.nii.gz)
 	noise_vol=$(($volumes-$(($noise-1))))
 	signal_vol=$(($noise_vol-1))
 	vol_half=$(($noise_vol/2))
