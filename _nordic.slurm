@@ -1,12 +1,12 @@
 #!/bin/bash -xv
 #SBATCH --partition=general
 #SBATCH --qos=regular
-#SBATCH --job-name=nordic_MEVOTLOC
+#SBATCH --job-name=NORDIC_MEVOTLOC
 #SBATCH --nodes=1
 #SBATCH --cpus-per-task=16
 #SBATCH --time=6:00:00
 #SBATCH --mem=80G
-#SBATCH --array=1-9
+#SBATCH --array=1-8
 #SBATCH --mail-type=ALL
 #SBATCH --mail-user=mflores@bcbl.eu
 #SBATCH --error=/scratch/mflores/MEVOTLOC/logs/%x_%a_%j.txt
@@ -23,7 +23,7 @@ echo "MEICA JOB ${SLURM_ARRAY_TASK_ID}"
 echo "##################################################"
 tasks=( "task-fLoc" )
 list_subj=( "001")
-runs=( "1" "2" "3" "4" "5" "6" "7" "8" )
+runs=( "1" "2" "3" "4" "5" "6" "7" )
 make_residuals="True"
 halves="True"
 counter=0
@@ -61,7 +61,7 @@ save_gfactor=1 # save gfactor map = 1 (saves gfactor and runs nordic); = 2 (save
 
 # mkdir -p gonna make a chain of dirextories.  
 #if [[ ! -e ${output} ]]; then
-task=${tsk}_run-{run}
+task=${tsk}_run-${run}
 echo "##################################################"
 echo "############# SUBJECT :${subj}      #############"
 echo "############# TASK :${tsk}          #############"
@@ -87,7 +87,7 @@ echo "**************************************************************************
 
 		part_mag_out=${subj}_ses-1_${task}_echo-${n_echo}_part-mag_bold_${method}N
 
-		part_phase=${output}/${subj}_ses-1_${task}_echo-${n_echo}_part-phase_bold_${method}_dsd
+		part_phase=/data/mflores/MEVOTLOC/${subj}/ses-1/${preproc}/${subj}_ses-1_${task}_echo-${n_echo}_part-phase_bold_${method}_dsd
 
 		echo "##################################################"
 		echo "##################################################"
@@ -143,7 +143,7 @@ echo "**************************************************************************
 	done	
 if [[ $halves == "True" ]]; then
 
-	volumes=$(3dinfo -nvi ${output}/${subj}_ses-1_${task}_echo-1_part-mag_bold_${method}_dsd.nii.gz)
+	volumes=$(3dinfo -nvi /data/mflores/MEVOTLOC/${subj}/ses-1/${preproc}/${subj}_ses-1_${task}_echo-1_part-mag_bold_${method}_dsd.nii.gz)
 	noise_vol=$(($volumes-$(($noise-1))))
 	signal_vol=$(($noise_vol-1))
 	vol_half=$(($noise_vol/2))
@@ -156,7 +156,7 @@ if [[ $halves == "True" ]]; then
 	do
 
 
-		part_mag="${output}/${subj}_ses-1_${task}_echo-${n_echo}_part-mag_bold_${method}_dsd"
+		part_mag="/data/mflores/MEVOTLOC/${subj}/ses-1/${preproc}/${subj}_ses-1_${task}_echo-${n_echo}_part-mag_bold_${method}_dsd"
 
 		part_mag_half1="${output}/${subj}_ses-1_${task}_echo-${n_echo}_part-mag_bold_${method}_dsd1"
 
@@ -166,7 +166,7 @@ if [[ $halves == "True" ]]; then
 
 		part_mag_out2="${subj}_ses-1_${task}_echo-${n_echo}_part-mag_bold_${method}N2"
 
-		part_phase="${output}/${subj}_ses-1_${task}_echo-${n_echo}_part-phase_bold_${method}_dsd"
+		part_phase="/data/mflores/MEVOTLOC/${subj}/ses-1/${preproc}/${subj}_ses-1_${task}_echo-${n_echo}_part-phase_bold_${method}_dsd"
 
 		part_phase_half1="${output}/${subj}_ses-1_${task}_echo-${n_echo}_part-phase_bold_${method}_dsd1"
 
