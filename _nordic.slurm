@@ -1,16 +1,16 @@
 #!/bin/bash -xv
 #SBATCH --partition=general
 #SBATCH --qos=regular
-#SBATCH --job-name=nordic_whole_residuals
+#SBATCH --job-name=nordic_MEVOTLOC
 #SBATCH --nodes=1
 #SBATCH --cpus-per-task=16
-#SBATCH --time=5:00:00
+#SBATCH --time=6:00:00
 #SBATCH --mem=80G
-#SBATCH --array=1-10
+#SBATCH --array=1-9
 #SBATCH --mail-type=ALL
 #SBATCH --mail-user=mflores@bcbl.eu
-#SBATCH --error=/scratch/mflores/Resting_State/logs/%x_%a_%j.txt
-#SBATCH --output=/scratch/mflores/Resting_State/logs/%x_%a_%j.txt
+#SBATCH --error=/scratch/mflores/MEVOTLOC/logs/%x_%a_%j.txt
+#SBATCH --output=/scratch/mflores/MEVOTLOC/logs/%x_%a_%j.txt
 
 
 module load AFNI/24.3.06-foss-2022a
@@ -21,26 +21,27 @@ module load MATLAB-IKUR
 echo "##################################################"
 echo "MEICA JOB ${SLURM_ARRAY_TASK_ID}"
 echo "##################################################"
-tasks=( "task-HABLA1200" "task-HABLA1700" )
-list_subj=( "001" "002" "003" "004" "005" )
+tasks=( "task-fLoc" )
+list_subj=( "001")
+runs=( "1" "2" "3" "4" "5" "6" "7" "8" )
 make_residuals="True"
 halves="True"
 counter=0
 for n_sub in "${list_subj[@]}" 
 do
-	for task in "${tasks[@]}"
+	for tsk in "${tasks[@]}"
 	do
-		#		for run in "${runs[@]}"
-		#		do
+				for run in "${runs[@]}"
+				do
 		((counter++))
 		if [[ $counter -eq ${SLURM_ARRAY_TASK_ID} ]]; then
 			echo "Reached expected permutation value: ${SLURM_ARRAY_TASK_ID}"
-			break 2
+			break 3
 
 		fi
 	done
 done
-#done
+done
 
 
 method=nordic # nordic, hydra 
@@ -49,9 +50,9 @@ subj=sub-${n_sub}
 # define folders 
 preproc=func_preproc_${method}
 repo=/home/mflores/scripts
-origin=/scratch/mflores/Resting_State/${subj}/ses-1/func_preproc_vanilla
-output=/scratch/mflores/Resting_State/${subj}/ses-1/${preproc}
-
+origin=/data/mflores/MEVOTLOC/${subj}/ses-1/func_preproc_vanilla
+output=/scratch/mflores/MEVOTLOC/${subj}/ses-1/${preproc}
+echoes=3
 noise=3 # number of noise volumes
 magn_only=""
 #magn_only="ARG.magnitude_only=1;"
@@ -60,9 +61,10 @@ save_gfactor=1 # save gfactor map = 1 (saves gfactor and runs nordic); = 2 (save
 
 # mkdir -p gonna make a chain of dirextories.  
 #if [[ ! -e ${output} ]]; then
+task=${tsk}_run-{run}
 echo "##################################################"
 echo "############# SUBJECT :${subj}      #############"
-echo "############# TASK :${task}          #############"
+echo "############# TASK :${tsk}          #############"
 echo "############# RUN :${run}            #############"
 echo "##################################################"
 
@@ -73,7 +75,7 @@ echo "##################################################"
 mkdir -p ${output}/gctmp # define temporary folder to save temporary matlab scripts 
 
 # TODO: Change nordic.m to return compressed files them)
-list_echoes=($(seq 1 4))
+list_echoes=($(seq 1 ${echoes}))
 echo "******************************************************************************"
 
 	for n_echo in "${list_echoes[@]}"
@@ -81,7 +83,7 @@ echo "**************************************************************************
 
 		temp_nordic=$(mktemp ${output}/gctmp/nordicXXXXXX.m)
 
-		part_mag=${output}/${subj}_ses-1_${task}_echo-${n_echo}_part-mag_bold_${method}_dsd
+		part_mag=/data/mflores/MEVOTLOC/${subj}/ses-1/${preproc}/${subj}_ses-1_${task}_echo-${n_echo}_part-mag_bold_${method}_dsd
 
 		part_mag_out=${subj}_ses-1_${task}_echo-${n_echo}_part-mag_bold_${method}N
 
