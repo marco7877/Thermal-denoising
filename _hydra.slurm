@@ -1,16 +1,16 @@
 #!/bin/bash -xv
 #SBATCH --partition=general
 #SBATCH --qos=regular
-#SBATCH --job-name=HYDRA_whole_residuals
+#SBATCH --job-name=HYDRA_MEVOTLOC
 #SBATCH --nodes=1
 #SBATCH --cpus-per-task=16
-#SBATCH --time=4:00:00
+#SBATCH --time=5:00:00
 #SBATCH --mem=80G
-#SBATCH --array=1-10
+#SBATCH --array=1-8
 #SBATCH --mail-type=ALL
 #SBATCH --mail-user=mflores@bcbl.eu
-#SBATCH --error=/scratch/mflores/Resting_State/logs/%x_%a_%j.txt
-#SBATCH --output=/scratch/mflores/Resting_State/logs/%x_%a_%j.txt
+#SBATCH --error=/scratch/mflores/MEVOTLOC/logs/%x_%a_%j.txt
+#SBATCH --output=/scratch/mflores/MEVOTLOC/logs/%x_%a_%j.txt
 
 
 
@@ -21,37 +21,39 @@ echo "##################################################"
 echo "HYDRA JOB ${SLURM_ARRAY_TASK_ID}"
 echo "##################################################"
 
-list_task=( "HABLA1200" "HABLA1700" )
-#runs=( "1" "2" )
-list_subj=( "005" "001" "002" "003" "004" )
+list_task=( "task-fLoc" )
+runs=( "1" "2" "3" "4" "5" "6" "7" "8" )
+list_subj=( "001" )
 counter=0
 make_residuals="True"
 halves="True"
 for n_sub in "${list_subj[@]}" 
 do
-	for n_task in "${list_task[@]}"
+	for tsk in "${list_task[@]}"
 	do
+		for run in "${runs[@]}"
+		do
 		((counter++))
 		if [[ $counter -eq ${SLURM_ARRAY_TASK_ID} ]]; then
 			echo "Reached expected permutation value: ${SLURM_ARRAY_TASK_ID}"
-			break 2
+			break 3
 
 		fi
 	done
 done
-
+done
 method=hydra
 preproc=func_preproc_${method}
 
 
 subj=sub-${n_sub}
-task=task-${n_task}
+task=${tsk}_run-${run}
 repo=/home/mflores/scripts
-origin=/scratch/mflores/Resting_State/${subj}/ses-1/func_preproc_vanilla
-output=/scratch/mflores/Resting_State/${subj}/ses-1/${preproc}
+origin=/scratch/mflores/MEVOTLOC/${subj}/ses-1/func_preproc_vanilla
+output=/scratch/mflores/MEVOTLOC/${subj}/ses-1/${preproc}
 noise=3 # number of noise volumes
 save_gfactor=1 # save gfactor map = 1 (saves gfactor and runs nordic); = 2 (saves gfactor and stops)  
-nechoes=4
+nechoes=3
 # MAIN
 
 #Check if output durectory exists
