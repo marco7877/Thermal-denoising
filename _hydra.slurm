@@ -6,7 +6,7 @@
 #SBATCH --cpus-per-task=16
 #SBATCH --time=5:00:00
 #SBATCH --mem=80G
-#SBATCH --array=1-8
+#SBATCH --array=1-7
 #SBATCH --mail-type=ALL
 #SBATCH --mail-user=mflores@bcbl.eu
 #SBATCH --error=/scratch/mflores/MEVOTLOC/logs/%x_%a_%j.txt
@@ -22,7 +22,7 @@ echo "HYDRA JOB ${SLURM_ARRAY_TASK_ID}"
 echo "##################################################"
 
 list_task=( "task-fLoc" )
-runs=( "1" "2" "3" "4" "5" "6" "7" "8" )
+runs=( "1" "2" "3" "4" "5" "6" "7" )
 list_subj=( "001" )
 counter=0
 make_residuals="True"
@@ -205,7 +205,7 @@ fi
 	gzip -f ${output}/${subj}_ses-1_${task}_echoes_part-mag_bold_${method}${ext}.nii
 
 
-	z_orig=$(3dinfo -nk ${output}/${subj}_ses-1_${task}_echo-1_part-mag_bold_${method}${ext}.nii.gz
+	z_orig=$(3dinfo -nk ${output}/${subj}_ses-1_${task}_echo-1_part-mag_bold_${method}_dsd${ext}.nii.gz
 	)
 	start=0
 
