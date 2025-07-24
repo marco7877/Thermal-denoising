@@ -39,8 +39,8 @@ nii3_denoised=denoised(:,:,:,:,3);
 %%nii4_denoised=denoised(:,:,:,:,4);
 %saving denoised parts
 %file=strrep(file,"_dsd","");
-part_out="_part-mag_bold_tmmpca";
-file=strrep(file,"/data/HABLA/","/scratch/mflores/");
+part_out="_part-mag_bold_tmppca";
+file=strrep(file,"/data/mflores/","/scratch/mflores/");
 disp(append("Saving denoised matrix as NIFTI: ",file,"1",part_out,ext));
 niftiwrite(nii1_denoised,append(file,"1",part_out,ext),nii1_info);
 disp(append("Saving denoised matrix as NIFTI: ",file,"2",part_out,ext));
