@@ -1,16 +1,16 @@
 #!/bin/bash -xv
 #SBATCH --partition=general
 #SBATCH --qos=regular
-#SBATCH --job-name=HYDRA_MEVOTLOC
+#SBATCH --job-name=HYDRA_Rest_HighRes
 #SBATCH --nodes=1
 #SBATCH --cpus-per-task=16
 #SBATCH --time=5:00:00
-#SBATCH --mem=80G
-#SBATCH --array=1-7
+#SBATCH --mem=90G
+#SBATCH --array=1-2
 #SBATCH --mail-type=ALL
 #SBATCH --mail-user=mflores@bcbl.eu
-#SBATCH --error=/scratch/mflores/MEVOTLOC/logs/%x_%a_%j.txt
-#SBATCH --output=/scratch/mflores/MEVOTLOC/logs/%x_%a_%j.txt
+#SBATCH --error=/scratch/mflores/Rest_HighRes/logs/%x_%a_%j.txt
+#SBATCH --output=/scratch/mflores/Rest_HighRes/logs/%x_%a_%j.txt
 
 
 
@@ -21,9 +21,9 @@ echo "##################################################"
 echo "HYDRA JOB ${SLURM_ARRAY_TASK_ID}"
 echo "##################################################"
 
-list_task=( "task-fLoc" )
-runs=( "1" "2" "3" "4" "5" "6" "7" )
-list_subj=( "001" )
+list_task=( "task-REST" )
+runs=( "1" "2" )
+list_subj=( "001")
 counter=0
 make_residuals="True"
 halves="True"
@@ -48,9 +48,10 @@ preproc=func_preproc_${method}
 
 subj=sub-${n_sub}
 task=${tsk}_run-${run}
+#task=${tsk}
 repo=/home/mflores/scripts
-origin=/data/mflores/MEVOTLOC/${subj}/ses-1/func_preproc_vanilla
-output=/scratch/mflores/MEVOTLOC/${subj}/ses-1/${preproc}
+origin=/data/mflores/Rest_HighRes/${subj}/ses-1/func_preproc_vanilla
+output=/scratch/mflores/Rest_HighRes/${subj}/ses-1/${preproc}
 noise=3 # number of noise volumes
 save_gfactor=1 # save gfactor map = 1 (saves gfactor and runs nordic); = 2 (saves gfactor and stops)  
 nechoes=3
@@ -69,11 +70,11 @@ mkdir -p ${output}/tmp
 
 echo "*************************************************************"
 # Reference outputal volumnes
-part_mag=/data/mflores/MEVOTLOC/${subj}/ses-1/${preproc}/${subj}_ses-1_${task}_echo-1_part-mag_bold_${method}_dsd.nii.gz
+part_mag=/data/mflores/Rest_HighRes/${subj}/ses-1/${preproc}/${subj}_ses-1_${task}_echo-1_part-mag_bold_${method}_dsd.nii.gz
 
 echo "My reference part_mag is: ${part_mag}"
 
-part_phase=/data/mflores/MEVOTLOC/${subj}/ses-1/${preproc}/${subj}_ses-1_${task}_echo-1_part-phase_bold_${method}_dsd.nii.gz
+part_phase=/data/mflores/Rest_HighRes/${subj}/ses-1/${preproc}/${subj}_ses-1_${task}_echo-1_part-phase_bold_${method}_dsd.nii.gz
 
 echo "My reference part_phase is: ${part_phase}"
 
@@ -96,9 +97,9 @@ for n_echo in "${list_aggregate[@]}"
 
 do
 
-	mag=$part_mag" "/data/mflores/MEVOTLOC/${subj}/ses-1/${preproc}/${subj}_ses-1_${task}_echo-${n_echo}_part-mag_bold_${method}_dsd.nii.gz
+	mag=$part_mag" "/data/mflores/Rest_HighRes/${subj}/ses-1/${preproc}/${subj}_ses-1_${task}_echo-${n_echo}_part-mag_bold_${method}_dsd.nii.gz
 
-	phase=$part_phase" "/data/mflores/MEVOTLOC/${subj}/ses-1/${preproc}/${subj}_ses-1_${task}_echo-${n_echo}_part-phase_bold_${method}_dsd.nii.gz
+	phase=$part_phase" "/data/mflores/Rest_HighRes/${subj}/ses-1/${preproc}/${subj}_ses-1_${task}_echo-${n_echo}_part-phase_bold_${method}_dsd.nii.gz
 
 	part_mag=$mag
 
@@ -117,7 +118,7 @@ echo "Phase volumes to concatenate are: $part_phase"
 
 if [[ $halves == "True" ]]; then
 
-	volumes=$(3dinfo -nvi /data/mflores/MEVOTLOC/${subj}/ses-1/${preproc}/${subj}_ses-1_${task}_echoes_part-mag_bold_${method}_dsd.nii.gz)
+	volumes=$(3dinfo -nvi ${output}/${subj}_ses-1_${task}_echoes_part-mag_bold_${method}_dsd.nii.gz)
 	noise_vol=$(($volumes-$(($noise-1))))
 	signal_vol=$(($noise_vol-1))
 	vol_half=$(($noise_vol/2))
@@ -205,7 +206,7 @@ fi
 	gzip -f ${output}/${subj}_ses-1_${task}_echoes_part-mag_bold_${method}${ext}.nii
 
 
-	z_orig=$(3dinfo -nk ${output}/${subj}_ses-1_${task}_echo-1_part-mag_bold_${method}_dsd${ext}.nii.gz
+	z_orig=$(3dinfo -nk ${origin}/${subj}_ses-1_${task}_echo-1_part-mag_bold_${method}_dsd${ext}.nii.gz
 	)
 	start=0
 
