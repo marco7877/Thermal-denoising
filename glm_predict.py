@@ -15,282 +15,130 @@ from nilearn.masking import apply_mask, unmask
 from nilearn.plotting import plot_epi, plot_stat_map, show
 from scipy.stats import pearsonr
 
-# import os
-# import argparse
+# This script will evaluate the quality of denoising on some task based fmri
+# data. The data contains multiple runs, There are several different denoising
+# methods - in some case we may want to relate these to several other runs of
+# the original (nondenoise data).
 
-###############################################
-###### Arguments ##############################
-###############################################
+# The script should take in
+# - a list of files or perhaps a reg exp to match files
+# - a list of the timing files associated with the nii data
+# - the path the mask we want to use.
+# - a flag for the denoising method - method, string
+# - a flag to use either 3ddeconvolve or nilearn - use_3dDeconvolve, 1/0
+# - a flag for the number of held. out runs - n_hold_out, int
+# - a flag for the number of bootstrap iterations - n_iters, int
+# - numbner of polynomials to remove - n_poly, int
 
-# parser=argparse.ArgumentParser(description="Computes reliability for fMRI data over GM
-#        so far this codes  get original data and split it in half")
-# parser.add_argument("--source_dir", default=None, type=str,
-#        help="Full path to the source directory")
-# parser.add_argument("--subjects", default=None, nargs="+",
-#        help=" subjects to iterate and do within method comparison
-#        i.e. subjects=(sub-001, sub-002, sub-003)")
-# parser.add_argument("--tasks", default=None, nargs="+",
-#        help=" task to iterate and do within method comparison per task/run
-#        i.e. tasks=(mppca,nordic,hydra,tmppca)")
-# parser.add_argument("--methods", default=None, nargs="+",
-#        help=" method to iterate and compare i.e. methods=(mppca,nordic,hydra,tmppca)")
-# parser.add_argument("--overwrite", default=True, type=bool,
-#        help=" Haults program if scatter plots exist. Default behaviour is True")
-###############################################
-###### Arguments ##############################
-###############################################
-
-# args = parser.parse_args()
-# source_dir = args.source_dir
-# subjects = args.subjects
-# tasks = args.tasks
-# methods = args.methods
-# source_dir = args.source_dir
-# overwrite = args.overwrite
-###############################################
-###### Functions ##############################
-###############################################
-def reliability_analysis(
-    epi_fname, mask, sbref, plot=True, savecorr=False, hist=True, make_nifti=True
-):
-    # Define variables
-    array_dict = {}
-    corr_dict = {}
-    reliability_dict = {}
-
-    print("Worth double checking! To understand output ")
-    print(
-        f"Saving ... correlation matrixes: {savecorr}, r-values histogram: {hist}, plot: {plot}"
-    )
-    ##############################
-    print("Loading timeseries")
-    ##############################
-    for i in list(range(len(epi_fname))):
-        print(f"Loading epi file: {epi_fname[i]} while applying mask: {mask}")
-        array_dict[i] = np.transpose(apply_mask(epi_fname[i], mask))
-        print(" Data loaded and masked!")
-        shape = array_dict[i].shape
-        print(f"Mask: {mask} contains {shape[0]} voxels")
-
-    if len(array_dict) == 1:
-        # Single run, split in two
-        corr_dict[0] = np.corrcoef(array_dict[0][:, : (shape[-1] // 2)])
-        print(
-            f"Functional connectivity for computed (pearson correlation) with shape {corr_dict[0].shape}"
-        )
-        corr_dict[1] = np.corrcoef(array_dict[0][:, (shape[-1] // 2) :])
-        print(
-            f"Functional connectivity for computed (pearson correlation) with shape {corr_dict[1].shape}"
-        )
-        print(" Original epi time series divided in two")
-        perm_volumes = list(combinations(range(len(corr_dict)), 2))
-        epi_fname.append(epi_fname[0])
-
-        for i in range(2):
-            base_fname = epi_fname[i].split("_")[-1]
-            # TODO what is this?
-            epi_fname[i].replace(
-                base_fname.split(".")[0],
-                base_fname.split(".")[0] + str(i),
-            )
-            if savecorr:
-                # TODO perm_volumes is not defined before we hit this point?
-                np.savetxt(
-                    epi_fname[i].replace(
-                        base_fname,
-                        base_fname.split(".")[0]
-                        + str(perm_volumes[i][0])
-                        + str(perm_volumes[i][1])
-                        + "fconnectivity.csv",
-                    ),
-                    corr_dict[i],
-                    delimiter=",",
-                )
-                print(
-                    f"Functional connectivity for saved as {epi_fname[i].replace(epi_fname[i].split('_')[-1], epi_fname[i].split('_')[-1].split('.')[0] + 'fconnectivity.csv')}"
-                )
-
-    elif len(array_dict) > 1:
-        # Multiple runs, compute correlation for each
-        perm_volumes = list(combinations(range(len(array_dict)), 2))
-        for i in list(range(len(epi_fname))):
-            base_fname = epi_fname[i].split("_")[-1]
-            corr_dict[i] = np.corrcoef(array_dict[i])
-            print(
-                f"Functional connectivity for computed (pearson correlation) with shape {corr_dict[i].shape}"
-            )
-            # TODO should this be corr_dict[i]
-            if savecorr:
-                np.savetxt(
-                    epi_fname[i].replace(
-                        base_fname,
-                        base_fname.split(".")[0]
-                        + str(perm_volumes[i][0])
-                        + str(perm_volumes[i][1])
-                        + "fconnectivity.csv",
-                    ),
-                    corr_dict[i],
-                    delimiter=",",
-                )
-                print(
-                    f"Functional connectivity for saved as {epi_fname[i].replace(epi_fname[i].split('_')[-1], epi_fname[i].split('_')[-1].split('.')[0] + 'fconnectivity.csv')}"
-                )
-
-    print(" Calculating reliability for combinations")
-    for i in range(len(perm_volumes)):
-        reliability_dict[i] = pow(
-            pearsonr(
-                corr_dict[perm_volumes[i][0]], corr_dict[perm_volumes[i][1]]
-            ).statistic,
-            2,
-        )
-        print(f"Reliability calculated for epi combinaiton {1 + i}")
-        if make_nifti:
-            plot_results = unmask(reliability_dict[i], mask)
-            plot_results.to_filename(
-                epi_fname[perm_volumes[i][0]].replace(
-                    epi_fname[perm_volumes[i][0]].split("_")[-1].split(".")[0],
-                    epi_fname[perm_volumes[i][0]].split("_")[-1].split(".")[0]
-                    + str(perm_volumes[i][0])
-                    + str(perm_volumes[i][1]),
-                )
-            )
-
-        if hist:
-            fig, ax = plt.subplots(nrows=1, ncols=1)
-            ax.hist(reliability_dict[i], bins=100, density=True, edgecolor="black")
-            plt.xlabel("Coefficient values")
-            plt.ylabel("Frequency")
-            fig.suptitle("Reliability coefficients histogram")
-            fig.savefig(
-                epi_fname[i].replace(
-                    epi_fname[perm_volumes[i][0]].split("_")[-1],
-                    epi_fname[perm_volumes[i][0]].split("_")[-1].split(".")[0]
-                    + str(perm_volumes[i][0])
-                    + str(perm_volumes[i][1])
-                    + "_histogram.png",
-                )
-            )
-            plt.close(fig)
-            np.savetxt(
-                    epi_fname[i].replace(
-                        base_fname,
-                        base_fname.split(".")[0]
-                        + str(perm_volumes[i][0])
-                        + str(perm_volumes[i][1])
-                        + "_reliability.csv",
-                    ),
-                    reliability_dict[i],
-                    delimiter=",",
-                )
-
-        if plot:
-            plot_results = unmask(reliability_dict[i], mask)
-            shape_epi = plot_results.shape
-            sbref_epi = load_img(sbref)
-            print("Loaded sbref for background: {sbref}")
-            plot_results_affined = Nifti1Image(
-                plot_results.get_fdata(),
-                affine=sbref_epi.affine,
-                header=sbref_epi.header,
-            )
-            print("Created new nilearn object to visualize results")
-            title = (
-                "Reliability map for "
-                + epi_fname[perm_volumes[i][0]].split("_")[0].split("/")[-1]
-                + " "
-                + epi_fname[perm_volumes[i][0]].split("_")[-1].split(".")[0]
-            )
-            brain_reliability = plot_stat_map(
-                plot_results_affined,
-                sbref_epi,
-                colorbar=True,
-                draw_cross=False,
-                title=title,
-                cut_coords=(
-                    (shape_epi[0] // 2),
-                    (shape_epi[1] // 2),
-                    (shape_epi[2] // 2),
-                ),
-                cmap="inferno",
-                vmin=0,
-                vmax=0.5,
-            )
-            brain_reliability.savefig(
-                epi_fname[perm_volumes[i][0]].replace(
-                    epi_fname[perm_volumes[i][0]].split("_")[-1],
-                    epi_fname[perm_volumes[i][0]].split("_")[-1].split(".")[0]
-                    + str(perm_volumes[i][0])
-                    + str(perm_volumes[i][1])
-                    + "_reliability.png",
-                )
-            )
+# NOTE - the DATA should already be scaled so that it is in units of percent signal change.
 
 
-#################
-###### Main      ##############################
-###############################################
+# Load in the data - these are nii files, so we can load all of them at once and
+# they will j ust be stored as references (using nibabel)
+
+vanilla_data_files = []  # List of file paths to the nii data files
+denoised_data_files = []  # List of file paths to the denoised nii data files
+
+for file in file_list:
+    vanilla_data_files.append(
+        nib.load(file)
+    )  # Assuming file_list contains paths to vanilla data files
+    denoised_data_files.append(
+        nib.load(file.replace("vanilla", method))
+    )  # This will load the denoised data that is identical to the og data
+
+# Check that the timing files have n_rows equal to the number of files.
 
 
-source_dir = "/scratch/mflores/Resting_State/analysis_timeSeries"
-methods = ["vanilla", "nordic", "tmmpca", "mppca", "nordic", "hydra"]
-subjects = ["sub-001", "sub-002", "sub-003", "sub-004", "sub-005"]
-tasks = ["task-HABLA1200", "task-HABLA1700"]
+# Loop through the number of permutations (choose n runs to hold out, randomply from whole list, )
+import numpy as np
 
-for subject in subjects:
-    for task in tasks:
-        for method in methods:
-            base_name = source_dir + "/" + subject + "_ses-1_" + task
+n_runs = len(vanilla_data_files)
+n_splits = 100
 
-            mask = base_name + "_echo-1_part-mag_gm_mask-union.nii.gz"
+indices = np.arange(n_runs)
+splits = []
 
-            sbref = (
-                "/scratch/mflores/Resting_State/analysis/"
-                + subject
-                + "_ses-1_"
-                + task
-                + "_echo-1_part-mag_masked_sbref.nii.gz"
-            )
+for _ in range(n_iters):
+    test_idx = np.random.choice(indices, size=n_hold_out, replace=False)
+    train_idx = np.setdiff1d(indices, test_idx)
+    splits.append((train_idx, test_idx))
 
-            # EPI, Split
-            try:
-                epi = [base_name + "_OC_part-mag_bold_" + method + ".nii.gz"]
-                print("LOG: Attempting EPI, split reliability analysis")
-                reliability_analysis(epi, mask, sbref)
-            except Exception:
-                print(
-                    f"ERROR: {subject}, task:{task}, and method:{method} one time series"
-                )
+# splits hold the indicies of the training and testing data for each iteration
+for train, test in splits:
+    # decision point - use nilearn or 3ddeconvolve
+    if use_3dDeconvolve:
+        # Use 3ddeconvolve
+        # the model is simple - just a design matrix with conditions and (per run) polynomials.
+        # This will be a system call to 3ddeconvolve, so we need to set up the command line arguments
+        # and then call it using subprocess or os.system. use n_poly to set the number of polynomials to remove.
+        os.subprocess()
 
-            # EPI, Series
-            try:
-                epi_series = [
-                    base_name + "_OC_part-mag_bold_" + method + "1.nii.gz",
-                    base_name + "_OC_part-mag_bold_" + method + "2.nii.gz",
-                ]
+        # load in the betas
+        nib.load().get_fdata()  # This will load the betas from the 3ddeconvolve output
 
-                print("LOG: Attempting EPI, series reliability analysis")
-                reliability_analysis(epi_series, mask, sbref)
-            except Exception:
-                print(f"ERROR: {subject}, task:{task}, and method:{method} episeries")
+        # make sure you know what the shape is, becaeuse we need that to make the predicted timeseries.
 
-            # Residuals, from split
-            try:
-                residual = [
-                    base_name + "_residuals_part-mag_bold_" + method + ".nii.gz"
-                ]
-                print("LOG: Attempting residuals, split reliability analysis")
-                reliability_analysis(residual, mask, sbref)
-            except Exception:
-                print(f"ERROR: {subject}, task:{task}, and method:{method} residual")
+        # Done, final betas here represent the (percent dignal change) calulated from how every many runs remained after the held out runs.
 
-            # Residuals, from series
-            try:
-                residual_series = [
-                    base_name + "_residuals_part-mag_bold_" + method + "1.nii.gz",
-                    base_name + "_residuals_part-mag_bold_" + method + "2.nii.gz",
-                ]
-                print("LOG: Attempting residuals, series reliability analysis")
-                reliability_analysis(residual_series, mask, sbref)
-            except Exception:
-                print("Error in residuals time series")
+    else:
+        # Use nilearn (we can also use direct linear algebra if we want?)
+        # There will still be a 3ddeconovle run to set up the design matrix
+
+        os.subprocess()
+
+        # Load in the designa matrix.
+        # it is special text, but should be reasonble to fgit.
+
+        # fit the glm
+        # taken from https://nilearn.github.io/stable/glm/first_level_model.html
+        # I have no idea how to do a glm in nilearn, but someone you know does it seems.
+        from nilearn.glm.first_level import FirstLevelModel
+
+        fmri_glm = FirstLevelModel()
+        fmri_glm = fmri_glm.fit(subject_data, design_matrices=design_matrices)
+
+        # get the betas on the testing data
+        # its somewhere in fmri_glm.
+
+        # Done, final betas here represent the (percent dignal change) calulated from how every many runs remained after the held out runs.
+
+    # We have the betas - generate the design matrix for the testing data, using the same 3ddecnolve approach
+
+    # Load in the generate design matrix
+
+    # NOTE - You must project out the polynomials from the loaded design matrix (correctly, on a per run basis)
+    # before we do the prediction. Why?
+    # We have betas that are the results of a model that include polynomials.
+    # we are going to have raw data that we have projected the polynomials out of.
+    # Therefore, we need to match the design to the data - so we project out the polynomials before we generate the predicted timeseries.
+    # I'm 99% sure about this.
+
+    # X: [T, C]      (design matrix, with polys projected out)
+    # B: [X, Y, Z, C]  (betas)
+    # predicted: [X, Y, Z, T]
+    # This creates the prediced timeseries for the entire design matrix
+    # as an output that is X, Y, Z, Time
+    predicted = np.transpose(np.tensordot(X, B, axes=([1], [3])), (1, 2, 3, 0))
+
+    # actually load in the test data (get_fdata() from nibabel)
+
+    # Project out the polynomials from the data (its like 3dTproject, but you can do it here in code)
+    # subselect the polynomial portion of the design matrix
+    for run in test:
+        # project out polys
+        # concatenate the runs together, so that we have a single 4D array
+
+    
+
+   
+    # For each voxel, calculate the R2 between the predicted and the actual data
+
+    # Store this in an ndarray, size X, Y, Z, n_iters
+
+# Permutations are done.
+
+# Save out the median of the R2 values. Median is chosen instead of mean, because mean of R2 isn't really valid, I don't think.
+
+# We now have the median R2 for denoised data predicting the held out, non denoised data, for a given number of held out runs.
+# If this is too slow, we could mask in 3ddeconvolve or mask/vectorize for nilearn, but have to handle the transforms correctly.
