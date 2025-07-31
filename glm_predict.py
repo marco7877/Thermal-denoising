@@ -38,13 +38,6 @@ from scipy.stats import pearsonr
 # they will j ust be stored as references (using nibabel)
 
 
-
-
-
- sorted([os.path.join(root, x) 
-    for root,dirs,files in os.walk(bids_dir) 
-    for x in files if x.endswith("echo-1_part-mag_sbref.nii.gz")])
-
 def glm_predict(source_directory,extention,method
         )#source directory is a string, extention is file finish pattern,
 #method is a string
