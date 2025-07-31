@@ -9,6 +9,7 @@ Created on Fri Oct 20 15:23:25 2023
 from itertools import combinations
 import matplotlib.pyplot as plt
 import numpy as np
+import os
 from nibabel import Nifti1Image
 from nilearn.image import load_img, resample_to_img
 from nilearn.masking import apply_mask, unmask
@@ -36,10 +37,23 @@ from scipy.stats import pearsonr
 # Load in the data - these are nii files, so we can load all of them at once and
 # they will j ust be stored as references (using nibabel)
 
+
+
+
+
+ sorted([os.path.join(root, x) 
+    for root,dirs,files in os.walk(bids_dir) 
+    for x in files if x.endswith("echo-1_part-mag_sbref.nii.gz")])
+
+def glm_predict(source_directory,extention,method
+        )#source directory is a string, extention is file finish pattern,
+#method is a string
+vanilla_files=sorted([os.path.join(root, x) 
+    for root,dirs,files in os.walk(source_directory) 
+    for x in files if x.endswith(extention)])
 vanilla_data_files = []  # List of file paths to the nii data files
 denoised_data_files = []  # List of file paths to the denoised nii data files
-
-for file in file_list:
+for file in vanilla_files:
     vanilla_data_files.append(
         nib.load(file)
     )  # Assuming file_list contains paths to vanilla data files
