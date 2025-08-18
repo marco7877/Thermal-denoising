@@ -161,7 +161,6 @@ for test, train in splits:
         # fit the glm
         # taken from https://nilearn.github.io/stable/glm/first_level_model.html
         # I have no idea how to do a glm in nilearn, but someone you know does it seems.
-        from nilearn.glm.first_level import FirstLevelModel
         selected_vanilla_files = [output_vanilla_files[i] for i in train]
         selected_denoised_files = [
                 f.replace("vanillaspc",method+"spc") 
@@ -177,10 +176,11 @@ for test, train in splits:
         #nilearn only accepts nilearn objects, so we concatenate in time with the 
         #same order as the design matrices
         fmri_train_glm = FirstLevelModel(t_r=TR,
-                mask_img=False,
+                mask_img=mask,
                 standardize=False,
                 signal_scaling=0,
-                hrf_model=HRF)
+                hrf_model=HRF,
+                minimize_memory=False)
         fmri_train_glm = fmri_train_glm.fit(concatenated_vanilla_images, design_matrices=design_matrices)#training glm
         regressors = design_matrices.columns.tolist()
         contrast_matrix=np.zeros((n_regressors,len(regressors))
