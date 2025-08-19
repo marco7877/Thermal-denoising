@@ -185,7 +185,7 @@ for test, train in splits:
         fmri_train_glm = FirstLevelModel(t_r=TR,
                 mask_img=mask,
                 standardize=False,
-                signal_scaling=0,
+                signal_scaling=False,
                 hrf_model=HRF,
                 minimize_memory=False)
         fmri_train_glm = fmri_train_glm.fit(concatenated_vanilla_images, design_matrices=design_matrices)#training glm
