@@ -12,7 +12,7 @@ import os
 import nibabel as nib
 from nilearn.glm.first_level import make_first_level_design_matrix, FirstLevelModel
 from nilearn.masking import apply_mask, unmask
-from nilearn.image import concat_imgs
+from nilearn.image import concat_imgs, index_img
 # This script will evaluate the quality of denoising on some task based fmri
 # data. The data contains multiple runs, There are several different denoising
 # methods - in some case we may want to relate these to several other runs of
@@ -145,6 +145,13 @@ for i in range(len(events_tsv)):
 
 # to create design matrix pd.concat([design_matrix[i],design_matrix[i+n]]) 
 
+#creating confound matrix with polynomials regressor to take out
+
+confound_matrix = make_first_level_design_matrix(
+        frame_times,
+        drift_model="polynomial",
+        drift_order=4,
+        hrf_model="spm")
 
 for test, train in splits:
     # decision point - use nilearn or 3ddeconvolve
@@ -166,11 +173,11 @@ for test, train in splits:
                 f.replace("vanillaspc",method+"spc") 
                 for f in selected_vanilla_files
                 ]
-        design_matrices=pd.concat([
+        design_matrices = pd.concat([
             design_matrix[i] for i in train 
-            ],ignore_index=True)#Creating one design matrix for all runs
+            ],ignore_index = True)#Creating one design matrix for all runs
         #each onehas individual polynomials, but share the same events
-        design_matrices=design_matrices.fillna(0)#replace NaN with 0 so that 
+        design_matrices = design_matrices.fillna(0)#replace NaN with 0 so that 
         # we can run a glm
         concatenated_vanilla_images = concat_imgs(selected_vanilla_files)
         #nilearn only accepts nilearn objects, so we concatenate in time with the 
@@ -191,16 +198,15 @@ for test, train in splits:
         for i, idx in enumerate(indices_regressors):
             contrast_matrix[i,idx]=1#contrast matrix to calculate betas
 
-        betas_fmri - fmri_train_glm.compute_contrast(contrast_matrix,output_type="effect_size")
+        betas_fmri = fmri_train_glm.compute_contrast(contrast_matrix,output_type="effect_size") # This is going to return us anniifti image object of dimentions x,y,z,conditions We will need to split the object into one per condition (it considers each condition similar as time)
+        betas_dict = {}
+        
+        for regressor in range(n_regressors):
+            betas_dict[regressors[regressor]] = index_img(betas_fmri,regressor)#saving each regressor beta in a different key
+
+image.clean_img(test_image,confounds=confound_matrix,detrend=False,standarize=False,sample_mask=mask)
 
 
-        betas_fmri = fmri_train_glm(regressors,output_type="effect_size")
-
-
-        # get the betas on the testing data
-        # its somewhere in fmri_glm.
-
-        # Done, final betas here represent the (percent dignal change) calulated from how every many runs remained after the held out runs.
 
     # We have the betas - generate the design matrix for the testing data, using the same 3ddecnolve approach
 
