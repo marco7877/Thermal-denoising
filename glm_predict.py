@@ -12,7 +12,7 @@ import os
 import nibabel as nib
 from nilearn.glm.first_level import make_first_level_design_matrix, FirstLevelModel
 from nilearn.masking import apply_mask, unmask
-from nilearn.image import concat_imgs, index_img
+from nilearn.image import concat_imgs, index_img, clean_img
 # This script will evaluate the quality of denoising on some task based fmri
 # data. The data contains multiple runs, There are several different denoising
 # methods - in some case we may want to relate these to several other runs of
@@ -153,58 +153,104 @@ confound_matrix = make_first_level_design_matrix(
         drift_order=4,
         hrf_model="spm")
 
+# To avoid redundant polynomial regression, I will do that at the beggining for all
+# the loaded volumes, con: more memory, pro: faster 
+regressed_confounds_vanilla_files = []
+
+
+for i in range(n_runs):
+#This is messy, but _I am firs detrending the spc timeseries, and then masking it
+#This gives me back a matrix time*voxels
+
+    regressed_confounds_vanilla_files.append(
+           apply_mask(
+               clean_img(
+                   output_vanilla_files[i],
+                   confounds=confound_matrix,
+                   detrend=False,
+                   standardize=False,
+                   sample_mask=mask),#detrend polynomials within the brain mask (x*y*z*t)
+               mask)#mask detrended (t*voxels)
+           )
+
+    regressed_confounds_denoised_files.append(
+           apply_mask(
+               clean_img(
+                   output_denoised_files[i],
+                   confounds=confound_matrix,
+                   detrend=False,
+                   standardize=False,
+                   sample_mask=mask)#detrend polynomials within the brain mask (x*y*z*t)
+               ,mask)#mask detrended (t*voxels)
+           )
+
+
 for test, train in splits:
     # decision point - use nilearn or 3ddeconvolve
-    if use_3dDeconvolve:
-        # Use 3ddeconvolve
-        # the model is simple - just a design matrix with conditions and (per run) polynomials.
-        # This will be a system call to 3ddeconvolve, so we need to set up the command line arguments
-
-        os.subprocess()
-
-        # Load in the designa matrix.
-        # it is special text, but should be reasonble to fgit.
-
-        # fit the glm
+    if nilearn:
+        
         # taken from https://nilearn.github.io/stable/glm/first_level_model.html
-        # I have no idea how to do a glm in nilearn, but someone you know does it seems.
-        selected_vanilla_files = [output_vanilla_files[i] for i in train]
-        selected_denoised_files = [
+        
+        train_vanilla_files = [output_vanilla_files[i] for i in train]
+
+        train_denoised_files = [
                 f.replace("vanillaspc",method+"spc") 
-                for f in selected_vanilla_files
+                for f in train_vanilla_files
                 ]
+
+        test_vanilla_files = [output_vanilla_files[i] for i in test]
+
+        test_denoised_files = [
+                f.replace("vanillaspc",method+"spc") 
+                for f in test_vanilla_files
+                ]
+        
         design_matrices = pd.concat([
             design_matrix[i] for i in train 
             ],ignore_index = True)#Creating one design matrix for all runs
+        
         #each onehas individual polynomials, but share the same events
+        
         design_matrices = design_matrices.fillna(0)#replace NaN with 0 so that 
+        
         # we can run a glm
-        concatenated_vanilla_images = concat_imgs(selected_vanilla_files)
+        
+        concatenated_vanilla_images = concat_imgs(train_vanilla_files)
         #nilearn only accepts nilearn objects, so we concatenate in time with the 
         #same order as the design matrices
+        
         fmri_train_glm = FirstLevelModel(t_r=TR,
                 mask_img=mask,
                 standardize=False,
                 signal_scaling=False,
                 hrf_model=HRF,
                 minimize_memory=False)
+
         fmri_train_glm = fmri_train_glm.fit(concatenated_vanilla_images, design_matrices=design_matrices)#training glm
+
         regressors = design_matrices.columns.tolist()
+
         contrast_matrix=np.zeros((n_regressors,len(regressors))
+
         regressors = regressors[0:n_regressors]# getting only the task regressors
         #which are the first ones
+
         indices_regressors=list(range(n_regressors))
 
         for i, idx in enumerate(indices_regressors):
             contrast_matrix[i,idx]=1#contrast matrix to calculate betas
 
-        betas_fmri = fmri_train_glm.compute_contrast(contrast_matrix,output_type="effect_size") # This is going to return us anniifti image object of dimentions x,y,z,conditions We will need to split the object into one per condition (it considers each condition similar as time)
+        betas_fmri = apply_mask(
+            fmri_train_glm.compute_contrast(
+                contrast_matrix,
+                output_type="effect_size"),
+            mask) # This is going to return us anniifti image object of dimentions x,y,z,conditions I am masking such result so that I get a matrix conditions*voxels Less memory and we dont have to deal with nilearn objects
+        
         betas_dict = {}
         
         for regressor in range(n_regressors):
-            betas_dict[regressors[regressor]] = index_img(betas_fmri,regressor)#saving each regressor beta in a different key
+            betas_dict[regressors[regressor]] = betas_fmri[regressor,:]#saving each regressor beta in a different key
 
-image.clean_img(test_image,confounds=confound_matrix,detrend=False,standarize=False,sample_mask=mask)
 
 
 
@@ -248,15 +294,3 @@ image.clean_img(test_image,confounds=confound_matrix,detrend=False,standarize=Fa
 # We now have the median R2 for denoised data predicting the held out, non denoised data, for a given number of held out runs.
 # If this is too slow, we could mask in 3ddeconvolve or mask/vectorize for nilearn, but have to handle the transforms correctly.
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-"""
-Created on Fri Oct 20 15:23:25 2023
-
-@author: mflores
-"""
-
-from itertools import combinations
-import matplotlib.pyplot as plt
-import numpy as np
-import os
-import nibabel as nib
