@@ -194,8 +194,7 @@ for test, train in splits:
 
         test_vanilla_files = [regressed_confounds_vanilla_files[i] for i in test]
 
-        test_denoised_files = regressed_confounds_denoised_files[i] for i in test[
-                ]
+        test_denoised_files = [regressed_confounds_denoised_files[i] for i in test]
         
         design_matrices = pd.concat([
             design_matrix[i] for i in train 
@@ -241,17 +240,42 @@ for test, train in splits:
         betas_fmri = get_data(
             fmri_train_glm.compute_contrast(
                 contrast_matrix,
-                output_type="effect_size"),
-            mask) # This is going to return us a pandas dataframe dimentions x,y,z,conditions
+                output_type="effect_size"))
+             # This is going to return us a pandas dataframe dimentions x,y,z,conditions
         
-        betas_fmri = betas_fmri.values#we convert the pandas to a numpy to run operations
         print ("Predicting timeseries given betas and test design matrix")
 
         predicted_timeseries = np.tensordot(
             betas_fmri,
             test_design_matrices,
             axes=([3],[1])
-            )# 
+            )#
+        test_vanilla_files=np.concatenate(
+            test_vanilla_files,
+            axis=3
+            )
+
+        shape_predicted=predicted_timeseries.shape#saving shape
+
+        shape_test_vanilla=test_vanilla_files.shape#saving shape
+
+        # we will reshape everything to a voxel * Time matrix
+        predicted_timeseries = np.reshape(
+            predicted_timeseries,
+            (np.prod(
+                shape_predicted[0:3]),#prod = amount of voxels
+                shape_predicted[-1]) # -1 = amount volulmes across time
+            )
+
+        test_vanilla_files = np.reshape(
+            test_vanilla_files,
+            (np.prod(
+                shape_test_vanilla[0:3]),#prod = amount of voxels
+                shape_test_vanilla[-1]) # -1 = amount volulmes across time
+            )
+        
+        #creating a mask for only voxels of interest
+
 
 
 
