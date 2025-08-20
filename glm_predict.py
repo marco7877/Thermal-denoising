@@ -194,9 +194,7 @@ for test, train in splits:
 
         test_vanilla_files = [regressed_confounds_vanilla_files[i] for i in test]
 
-        test_denoised_files = [
-                f.replace("vanillaspc",method+"spc") 
-                for f in test_vanilla_files
+        test_denoised_files = regressed_confounds_denoised_files[i] for i in test[
                 ]
         
         design_matrices = pd.concat([
