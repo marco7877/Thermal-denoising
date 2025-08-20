@@ -12,7 +12,7 @@ import os
 import nibabel as nib
 from nilearn.glm.first_level import make_first_level_design_matrix, FirstLevelModel
 from nilearn.masking import apply_mask, unmask
-from nilearn.image import concat_imgs, index_img, clean_img
+from nilearn.image import concat_imgs, index_img, clean_img, get_data
 # This script will evaluate the quality of denoising on some task based fmri
 # data. The data contains multiple runs, There are several different denoising
 # methods - in some case we may want to relate these to several other runs of
@@ -52,16 +52,14 @@ n_runs = len(vanilla_files)
 
 for i in range(n_runs):
     vanilla_data_files.append(
-       np.transpose(
            apply_mask(vanilla_files[i],
-            mask_files[i])
-           ))  # Assuming file_list contains paths to vanilla data files
+            mask)
+           )  # Assuming file_list contains paths to vanilla data files
     #data is already masked
     denoised_data_files.append(
-        np.transpose(
             apply_mask(vanilla_files[i].replace("vanilla", method),
-            mask_files[i])
-            ))  # This will load the denoised data that is identical to the og data
+            mask)
+            )  # This will load the denoised data that is identical to the og data
     #data is already masked
     # Check that the timing files have n_rows equal to the number of files.
 # Loop through the number of permutations (choose n runs to hold out, randomply from whole list, )
@@ -85,13 +83,13 @@ if spc_trans:
     for i in range(n_runs):
         vanilla_data_spc_files.append(
             (vanilla_data_files[i] - 
-            (np.mean(vanilla_data_files[i],axis=1).reshape(-1,1))) /
-            (np.mean(vanilla_data_files[i],axis=1).reshape(-1,1))
+            (np.mean(vanilla_data_files[i],axis=0).reshape(-1,1))) /
+            (np.mean(vanilla_data_files[i],axis=0).reshape(-1,1))
             )
         denoised_data_spc_files.append(
             (denoised_data_files[i] - 
-            (np.mean(denoised_data_files[i],axis=1).reshape(-1,1))) /
-            (np.mean(denoised_data_files[i],axis=1).reshape(-1,1))
+            (np.mean(denoised_data_files[i],axis=0).reshape(-1,1))) /
+            (np.mean(denoised_data_files[i],axis=0).reshape(-1,1))
             )
         if save_spc:
             spc_vanilla = unmask(
@@ -163,25 +161,21 @@ for i in range(n_runs):
 #This gives me back a matrix time*voxels
 
     regressed_confounds_vanilla_files.append(
-           apply_mask(
                clean_img(
                    output_vanilla_files[i],
                    confounds=confound_matrix,
                    detrend=False,
                    standardize=False,
-                   sample_mask=mask),#detrend polynomials within the brain mask (x*y*z*t)
-               mask)#mask detrended (t*voxels)
+                   sample_mask=mask).get_fdata()#detrend polynomials within the brain mask (x*y*z*t)
            )
 
     regressed_confounds_denoised_files.append(
-           apply_mask(
                clean_img(
                    output_denoised_files[i],
                    confounds=confound_matrix,
                    detrend=False,
                    standardize=False,
-                   sample_mask=mask)#detrend polynomials within the brain mask (x*y*z*t)
-               ,mask)#mask detrended (t*voxels)
+                   sample_mask=mask).get_fdata()#detrend polynomials within the brain mask (x*y*z*t)
            )
 
 
@@ -198,7 +192,7 @@ for test, train in splits:
                 for f in train_vanilla_files
                 ]
 
-        test_vanilla_files = [output_vanilla_files[i] for i in test]
+        test_vanilla_files = [regressed_confounds_vanilla_files[i] for i in test]
 
         test_denoised_files = [
                 f.replace("vanillaspc",method+"spc") 
@@ -208,6 +202,12 @@ for test, train in splits:
         design_matrices = pd.concat([
             design_matrix[i] for i in train 
             ],ignore_index = True)#Creating one design matrix for all runs
+
+        test_design_matrices = pd.concat([
+            design_matrix[i] for i in test
+            ],ignore_index = True)# creating design matrix for testing
+        
+        test_design_matrices = test_design_matrices.values[:,n_regressors]# converting to numpy array for tensor product and taking only the task conditions as regressors
         
         #each onehas individual polynomials, but share the same events
         
@@ -240,16 +240,26 @@ for test, train in splits:
         for i, idx in enumerate(indices_regressors):
             contrast_matrix[i,idx]=1#contrast matrix to calculate betas
 
-        betas_fmri = apply_mask(
+        betas_fmri = get_data(
             fmri_train_glm.compute_contrast(
                 contrast_matrix,
                 output_type="effect_size"),
-            mask) # This is going to return us anniifti image object of dimentions x,y,z,conditions I am masking such result so that I get a matrix conditions*voxels Less memory and we dont have to deal with nilearn objects
+            mask) # This is going to return us a pandas dataframe dimentions x,y,z,conditions
         
-        betas_dict = {}
+        betas_fmri = betas_fmri.values#we convert the pandas to a numpy to run operations
+        print ("Predicting timeseries given betas and test design matrix")
+
+        predicted_timeseries = np.tensordot(
+            betas_fmri,
+            test_design_matrices,
+            axes=([3],[1])
+            )# 
+
+
+
         
-        for regressor in range(n_regressors):
-            betas_dict[regressors[regressor]] = betas_fmri[regressor,:]#saving each regressor beta in a different key
+        #for regressor in range(n_regressors):
+        #    betas_dict[regressors[regressor]] = betas_fmri[regressor,:]#saving each regressor beta in a different key
 
 
 
