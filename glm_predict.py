@@ -8,7 +8,7 @@ Created on Fri Oct 20 15:23:25 2023
 
 import matplotlib.pyplot as plt
 import numpy as np
-import os
+import pandas as pd
 import nibabel as nib
 from nilearn.glm.first_level import make_first_level_design_matrix, FirstLevelModel
 from nilearn.masking import apply_mask, unmask
@@ -112,7 +112,7 @@ if spc_trans:
 events_timeseries = {}
 design_matrix = {}
 n_bricks = vanilla_data_files[0].shape[0]
-frame_times =np. arange(n_bricks)*TR
+frame_times =np.arange(n_bricks)*TR
 events_tsv=sorted([os.path.join(root, x) 
     for root,dirs,files in os.walk(source_directory.split("sub-")[0]) 
     for x in files if x.endswith("events.tsv")])
