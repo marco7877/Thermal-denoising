@@ -76,7 +76,7 @@ for _ in range(n_splits):
     splits.append((train_idx, test_idx))
 
 if spc_trans:
-    output_vanilla_files=[string.replace("vanila","vanillaspc")
+    output_vanilla_files=[string.replace("desc","desc-vanillaspc")
             for string in vanilla_files]#creating output nam
     vanilla_data_spc_files=[]
     denoised_data_spc_files=[]
