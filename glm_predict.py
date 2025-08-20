@@ -111,7 +111,7 @@ if spc_trans:
             # Open event tsv
 events_timeseries = {}
 design_matrix = {}
-n_bricks = vanilla_data_files[0].shape[-1]
+n_bricks = vanilla_data_files[0].shape[0]
 frame_times =np. arange(n_bricks)*TR
 events_tsv=sorted([os.path.join(root, x) 
     for root,dirs,files in os.walk(source_directory.split("sub-")[0]) 
