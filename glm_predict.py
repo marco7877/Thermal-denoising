@@ -110,12 +110,17 @@ if spc_trans:
 #sometimes I get some voxels with 0, maybe I can add a constant noise
             # Open event tsv
 events_timeseries = {}
+
 design_matrix = {}
+
 n_bricks = vanilla_data_files[0].shape[0]
+
 frame_times =np.arange(n_bricks)*TR
+
 events_tsv=sorted([os.path.join(root, x) 
     for root,dirs,files in os.walk(source_directory.split("sub-")[0]) 
     for x in files if x.endswith("events.tsv")])
+
 for i in range(len(events_tsv)):
     tmp = pd.readcsv(
             events_tsv[i],
@@ -137,7 +142,8 @@ for i in range(len(events_tsv)):
         "drift_3":"drift_3"+run,
         "drift_4":"drift_4"+run
         },inplace=True)
-    #as key and the run number as events column name so that then we can acces them and merge them letting columns stay different per run
+
+        #as key and the run number as events column name so that then we can acces them and merge them letting columns stay different per run
 # splits hold the indicies of the training and testing data for each iteration
 # making individual design matrixes
 
@@ -155,6 +161,7 @@ confound_matrix = make_first_level_design_matrix(
 # the loaded volumes, con: more memory, pro: faster 
 regressed_confounds_vanilla_files = []
 
+regressed_confounds_denoised_files = []
 
 for i in range(n_runs):
 #This is messy, but _I am firs detrending the spc timeseries, and then masking it
@@ -251,7 +258,7 @@ for test, train in splits:
             axes=([3],[1])
             )#
 
-        test_vanilla_files=np.concatenate(
+        test_vanilla_files = np.concatenate(
             test_vanilla_files,
             axis=3
             )
@@ -305,7 +312,7 @@ for test, train in splits:
 
         epsilon = 10e-8 #this is a noise to avoid zero division
 
-        coefficient = (numerator) / (denominator + epsilon)
+        coefficient = ((numerator) / (denominator + epsilon))**2
 
 
 
