@@ -255,23 +255,23 @@ for test, train in splits:
             axis=3
             )
 
-        shape_predicted=predicted_timeseries.shape#saving shape
+        #shape_predicted=predicted_timeseries.shape#saving shape
 
-        shape_test_vanilla=test_vanilla_files.shape#saving shape
+        #shape_test_vanilla=test_vanilla_files.shape#saving shape
 
         # we will reshape everything to a voxel * Time matrix
         predicted_timeseries = np.reshape(
             predicted_timeseries,
-            (np.prod(
-                shape_predicted[0:3]),#prod = amount of voxels
-                shape_predicted[-1]) # -1 = amount volulmes across time
+            (
+                -1,
+                predicted_timeseries.shape[-1]) # -1 = amount volulmes across time
             )
 
         test_vanilla_files = np.reshape(
             test_vanilla_files,
-            (np.prod(
-                shape_test_vanilla[0:3]),#prod = amount of voxels
-                shape_test_vanilla[-1]) # -1 = amount volulmes across time
+            (
+                -1,
+                test_vanilla_files.shape[-1])#prod = amount of voxels ) # -1 = amount volulmes across time
             )
         
         #creating a mask for only voxels of interest
