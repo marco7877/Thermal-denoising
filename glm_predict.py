@@ -227,12 +227,12 @@ for test, train in splits:
 
         regressors = design_matrices.columns.tolist()
 
-        contrast_matrix=np.zeros((n_regressors,len(regressors))
+        contrast_matrix = np.zeros((n_regressors,len(regressors))
 
         regressors = regressors[0:n_regressors]# getting only the task regressors
         #which are the first ones
 
-        indices_regressors=list(range(n_regressors))
+        indices_regressors = list(range(n_regressors))
 
         for i, idx in enumerate(indices_regressors):
             contrast_matrix[i,idx]=1#contrast matrix to calculate betas
@@ -250,6 +250,7 @@ for test, train in splits:
             test_design_matrices,
             axes=([3],[1])
             )#
+
         test_vanilla_files=np.concatenate(
             test_vanilla_files,
             axis=3
@@ -275,40 +276,41 @@ for test, train in splits:
             )
         
         #creating a mask for only voxels of interest
+        regression_mask = np.ma.masked_where(
+            test_vanilla_files[:,0]!=0,
+            test_vanilla_files[:,0])
+
+        #Because matrix is so so big, I need to calculate the regression from scratch I am following Scipy formula at https://docs.scipy.org/doc/scipy/reference/generated/scipy.stats.pearsonr.html 
+
+#        r = \frac{\sum (x - m_x) (y - m_y)}
+#                         {\sqrt{\sum (x - m_x)^2 \sum (y - m_y)^2}}
+
+        delta_predicted = predicted_timeseries[regression_mask.mask,:] - np.mean(
+                predicted_timeseries[regression_mask.mask,:],
+                axis=1).reshape(-1,1)
+
+        delta_test = test_vanilla_files[regression_mask.mask,:] - np.mean(
+                test_vanilla_files[regression_mask.mask,:],
+                axis=1).reshape(-1,1)
+
+        numerator = np.sum(
+                delta_predicted*delta_predicted,axis=1)
+
+        denominator = np.sqrt(
+                np.sum(
+                delta_predicted**2,axis=1)*
+                np.sum(
+                delta_test**2,axis=1)
+                )
+
+        epsilon = 10e-8 #this is a noise to avoid zero division
+
+        coefficient = (numerator) / (denominator + epsilon)
 
 
 
 
-        
-        #for regressor in range(n_regressors):
-        #    betas_dict[regressors[regressor]] = betas_fmri[regressor,:]#saving each regressor beta in a different key
-
-
-
-
-    # We have the betas - generate the design matrix for the testing data, using the same 3ddecnolve approach
-
-    # Load in the generate design matrix
-
-    # NOTE - You must project out the polynomials from the loaded design matrix (correctly, on a per run basis)
-    # before we do the prediction. Why?
-    # We have betas that are the results of a model that include polynomials.
-    # we are going to have raw data that we have projected the polynomials out of.
-    # Therefore, we need to match the design to the data - so we project out the polynomials before we generate the predicted timeseries.
-    # I'm 99% sure about this.
-
-    # X: [T, C]      (design matrix, with polys projected out)
-    # B: [X, Y, Z, C]  (betas)
-    # predicted: [X, Y, Z, T]
-    # This creates the prediced timeseries for the entire design matrix
-    # as an output that is X, Y, Z, Time
-    predicted = np.transpose(np.tensordot(X, B, axes=([1], [3])), (1, 2, 3, 0))
-
-    # actually load in the test data (get_fdata() from nibabel)
-
-    # Project out the polynomials from the data (its like 3dTproject, but you can do it here in code)
-    # subselect the polynomial portion of the design matrix
-    for run in test:
+   for run in test:
         # project out polys
         # concatenate the runs together, so that we have a single 4D array
 
