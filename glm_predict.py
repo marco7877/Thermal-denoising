@@ -80,6 +80,7 @@ if spc_trans:
             for string in vanilla_files]#creating output nam
     vanilla_data_spc_files=[]
     denoised_data_spc_files=[]
+    output_denoised_files=[]
     for i in range(n_runs):
         vanilla_data_spc_files.append(
             (vanilla_data_files[i] - 
@@ -104,9 +105,13 @@ if spc_trans:
             denoised_data_spc_files[i]),
             mask
             )
-            spc_denoised.to_filename(
+            output_denoised_files.append(
             output_vanilla_files[i].replace("vanillaspc",method+"spc")
             )
+            spc_denoised.to_filename(
+            output_denoised_files[i])
+            )
+            out
 #sometimes I get some voxels with 0, maybe I can add a constant noise
             # Open event tsv
 events_timeseries = {}
