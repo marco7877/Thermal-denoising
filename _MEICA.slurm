@@ -1,16 +1,16 @@
 #!/bin/bash -xv
 #SBATCH --partition=general
 #SBATCH --qos=regular
-#SBATCH --job-name=MEICA_MEVOTLOC
+#SBATCH --job-name=MEICA_Rest_HighRes
 #SBATCH --nodes=1
 #SBATCH --cpus-per-task=8
 #SBATCH --time=06:00:00
 #SBATCH --mem=120G
-#SBATCH --array=1-35
+#SBATCH --array=1-10
 #SBATCH --mail-type=ALL,ARRAY_TASKS
 #SBATCH --mail-user=mflores@bcbl.eu
-#SBATCH --error=/scratch/mflores/MEVOTLOC/logs/%x_%a_%j.txt
-#SBATCH --output=/scratch/mflores/MEVOTLOC/logs/%x_%a_%j.txt
+#SBATCH --error=/scratch/mflores/Rest_HighRes/logs/%x_%a_%j.txt
+#SBATCH --output=/scratch/mflores/Rest_HighRes/logs/%x_%a_%j.txt
 
 module load Miniforge3
 source activate /data/mflores/TEDANA/
@@ -21,16 +21,16 @@ source activate /data/mflores/TEDANA/
 echo "##################################################"
 echo "MEICA JOB ${SLURM_ARRAY_TASK_ID}"
 echo "##################################################"
-tasks=( "task-fLoc" )
+tasks=( "task-REST" )
 list_subj=( "001")
-runs=( "1" "2" "3" "4" "5" "6" "7" )
+runs=( "1" "2" )
 methods=("nordic" "mppca" "tmppca" "vanilla" "hydra")
 #methods=( "nordic" )
 counter=0
 tedana="True"
 t2smap="False"
 residuals="False"
-halves="False"
+halves="True"
 necho=3
 # ir residuals == true tedana and t2smap will not be useful
 # Define echo times for each dataset 
@@ -73,8 +73,8 @@ echo "##################################################"
 
 # define folders
 subj=sub-${n_sub}
-input=/data/mflores/MEVOTLOC/${subj}/ses-1/func_preproc_${method}
-output=/scratch/mflores/MEVOTLOC/${subj}/ses-1/func_preproc_${method}/tedana_${task}_${tree}
+input=/data/mflores/Rest_HighRes/${subj}/ses-1/func_preproc_${method}
+output=/scratch/mflores/Rest_HighRes/${subj}/ses-1/func_preproc_${method}/tedana_${task}_${tree}
 
 
 if [[ ${residuals} = "True" ]];then
@@ -103,7 +103,7 @@ for volume in "${volumes[@]}"; do
 	# Define mask volume and create symbolic link
 
 	#mask_preproc=${input}/${subj}_ses-1_${task}_run-${run}_part-mag_desc-brain_mask.nii.gz
-	mask_preproc=/scratch/mflores/MEVOTLOC/${subj}/ses-1/func_preproc_vanilla/${subj}_ses-1_${tsk}run-1_echo-1_part-mag_brain_mask.nii.gz
+	mask_preproc=/data/mflores/Rest_HighRes/${subj}/ses-1/func_preproc_vanilla/${subj}_ses-1_${tsk}_run-1_echo-1_part-mag_brain_mask.nii.gz
 
 	echo "My reference mask is: ${mask_preproc}"
 
@@ -119,11 +119,11 @@ for volume in "${volumes[@]}"; do
 	done
 
 	if [[ $residuals == "True" ]];then
-		input_weights=/scratch/mflores/MEVOTLOC/${subj}/ses-1/func_preproc_vanilla/tedana_${task}_${tree}bold
+		input_weights=/data/mflores/Rest_HighRes/${subj}/ses-1/func_preproc_vanilla/tedana_${task}_${tree}bold
 		echo "##################################################"
 		echo "Making OC from residuals"
 		echo "##################################################"
-		mask_preproc=/scratch/mflores/MEVOTLOC/analysis_timeSeries/${subj}_ses-1_${task}_echo-1_part-mag_brain_mask-union.nii.gz
+		mask_preproc=/data/mflores/Rest_HighRes/analysis_timeSeries/${subj}_ses-1_${task}_echo-1_part-mag_brain_mask-union.nii.gz
 		part_mag1=${input}/${subj}_ses-1_${task}_echo-1_part-mag_${part}_${method}_mcf_al${ext}
 		part_mag2=${input}/${subj}_ses-1_${task}_echo-2_part-mag_${part}_${method}_mcf_al${ext}
 		part_mag3=${input}/${subj}_ses-1_${task}_echo-3_part-mag_${part}_${method}_mcf_al${ext}
@@ -133,7 +133,7 @@ for volume in "${volumes[@]}"; do
 		weight_mag3=${input_weights}/${subj}_${task}_OC_echo-3_weight.nii.gz
 		weight_mag4=${input_weights}/${subj}_${task}_OC_echo-4_weight.nii.gz
 
-		3dcalc -a ${part_mag1} -b ${part_mag2} -c ${part_mag3} -d ${part_mag4} -e ${weight_mag1} -f ${weight_mag2} -g ${weight_mag3} -h ${weight_mag4} -m ${mask_preproc}  -expr '(a*e+b*f+c*g+d*h)*m' -prefix /scratch/mflores/MEVOTLOC/${subj}/ses-1/func_preproc_${method}/tedana_${task}_${tree}${part}${volume}/desc-optcom_bold.nii.gz -overwrite 
+		3dcalc -a ${part_mag1} -b ${part_mag2} -c ${part_mag3} -d ${part_mag4} -e ${weight_mag1} -f ${weight_mag2} -g ${weight_mag3} -h ${weight_mag4} -m ${mask_preproc}  -expr '(a*e+b*f+c*g+d*h)*m' -prefix /scratch/mflores/Rest_HighRes/${subj}/ses-1/func_preproc_${method}/tedana_${task}_${tree}${part}${volume}/desc-optcom_bold.nii.gz -overwrite 
 	else
 
 		if [[ $tedana == "True" ]];then
