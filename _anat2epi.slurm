@@ -1,7 +1,7 @@
 #!/bin/bash -xv
 #SBATCH --partition=general
 #SBATCH --qos=regular
-#SBATCH --job-name=epi2anat_union-gm
+#SBATCH --job-name=epi2anat_union-gm_vanilla
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task=1
@@ -9,9 +9,9 @@
 #SBATCH --mem=6G
 #SBATCH --mail-type=ALL,ARRAY_TASKS
 #SBATCH --mail-user=mflores@bcbl.eu
-#SBATCH --array=1-10
-#SBATCH --error=/scratch/mflores/Resting_State/logs/%x_%a_%j.txt
-#SBATCH --output=/scratch/mflores/Resting_State/logs/%x_%a_%j.txt
+#SBATCH --array=1-2
+#SBATCH --error=/scratch/mflores/Rest_HighRes/logs/%x_%a_%j.txt
+#SBATCH --output=/scratch/mflores/Rest_HighRes/logs/%x_%a_%j.txt
 
 module load AFNI/24.2.01-foss-2022a
 
@@ -20,20 +20,22 @@ echo "module load AFNI/24.3.06-foss-2022a"
 echo "##################################################"
 echo "$SLURM_JOB_NAME : $SLURM_ARRAY_JOB_ID, ${SLURM_ARRAY_TASK_ID}"
 echo "##################################################"
-tasks=( "task-HABLA1700" "task-HABLA1200" )
-list_subj=( "001" "002" "003" "004" "005" )
-#runs=( 1 2 )
+#tasks=("task-REST")
+tsk="task-REST"
+list_subj=( "001")
+#n_sub="001"
+runs=( "1" "2" )
 #methods=( "nordic" "hydra" "vanilla" "tmmpca" "mppca" )
-methods=( "nordic" )
+methods=( "vanilla" )
 SE="False"
-compute_mask="False"
+compute_mask="True"
 skull_strip="False"
-allign_epi2anat="False"
+allign_epi2anat="True"
 counter=0
 union_gm_wm="True"
-residuals="True"
-halves="False"
-for task in "${tasks[@]}"
+residuals="False"
+halves="True"
+for run in "${runs[@]}"
 do
 	for n_sub in "${list_subj[@]}" 
 	do
@@ -48,8 +50,9 @@ do
 		done
 	done
 done
-dir="/scratch/mflores/Resting_State"
+dir="/data/mflores/Rest_HighRes"
 preproc="func_preproc_${method}"
+task=${tsk}_${run}
 echo "##################################################"
 echo "############# SUBJECT :${n_sub}      #############"
 echo "############# TASK :${task}          #############"
@@ -63,16 +66,23 @@ origin_nat=${dir}/freesurfer/${subj}/SUMA
 root=${dir}/"${subj}/ses-1/${preproc}"
 matrix_suffix=a2e_${task}
 analysis_folders=( "analysis" "analysis_timeSeries" )
+mask_folder="/scratch/mflores/Rest_HighRes/masks"
 echo analizing subject ${subj}
 
+
+# Make mask directory
+mkdir -p ${mask_folder}
+
+
+
 mask=${origin}/${subj}_ses-1_${task}_echo-1_part-mag_brain_mask.nii.gz
-sbref=/data/HABLA/Resting_State/${subj}/ses-1/func/${subj}_ses-1_${task}_echo-1_part-mag_sbref.nii.gz
+sbref=/data/HABLA/Rest_HighRes/${subj}/ses-1/func/${subj}_ses-1_${task}_echo-1_part-mag_sbref.nii.gz
 t1=${origin_nat}/T1.nii.gz
 skstr_t1=${origin_nat}/${subj}_ses-1_acq-uniclean-sk-str_T1w.nii.gz
 
-masked_sbref=/scratch/mflores/Resting_State/analysis/${subj}_ses-1_${task}_echo-1_part-mag_masked_sbref.nii.gz
+masked_sbref=/scratch/mflores/Rest_HighRes/analysis/${subj}_ses-1_${task}_echo-1_part-mag_masked_sbref.nii.gz
 alligned_mask=${root}/${subj}_ses-1_${task}_echo-1_part-mag_alligned_mask.nii.gz
-alligned_gmmask_union=/scratch/mflores/Resting_State/analysis_timeSeries/${subj}_ses-1_${task}_echo-1_part-mag_gm_mask-union.nii.gz
+alligned_gmmask_union=/scratch/mflores/Rest_HighRes/analysis_timeSeries/${subj}_ses-1_${task}_echo-1_part-mag_gm_mask-union.nii.gz
 dilated_mask=${root}/${subj}_ses-1_${task}_echo-1_part-mag_dilated_mask.nii.gz
 non_gm_mask=${root}/${subj}_ses-1_${task}_echo-1_part-mag_non-gm_mask.nii.gz
 non_gm_mask_corrected=${root}/${subj}_ses-1_${task}_echo-1_part-mag_non-gm-corrected_mask.nii.gz
@@ -101,31 +111,31 @@ for volume in "${volumes[@]}"; do
 
 	labeled_T1=${origin_nat}/aparc.a2009s+aseg.nii.gz
 
-	gm_mask=${origin_nat}/${subj}_ses-1_${task}_${method}_gm-mask_T1w.nii.gz
-	slf_mask=${origin_nat}/${subj}_ses-1_${task}_${method}_slf-mask_T1w.nii.gz
-	slb_mask=${origin_nat}/${subj}_ses-1_${task}_${method}_slb-mask_T1w.nii.gz
-	sl_mask=${origin_nat}/${subj}_ses-1_${task}_${method}_sl-mask_T1w.nii.gz
-	srf_mask=${origin_nat}/${subj}_ses-1_${task}_${method}_srf-mask_T1w.nii.gz
-	srb_mask=${origin_nat}/${subj}_ses-1_${task}_${method}_srb-mask_T1w.nii.gz
-	sr_mask=${origin_nat}/${subj}_ses-1_${task}_${method}_sr-mask_T1w.nii.gz
-	sc_mask=${origin_nat}/${subj}_ses-1_${task}_${method}_sc-mask_T1w.nii.gz
+	gm_mask=${mask_folder}/${subj}_ses-1_${task}_${method}_gm-mask_T1w.nii.gz
+	slf_mask=${mask_folder}/${subj}_ses-1_${task}_${method}_slf-mask_T1w.nii.gz
+	slb_mask=${mask_folder}/${subj}_ses-1_${task}_${method}_slb-mask_T1w.nii.gz
+	sl_mask=${mask_folder}/${subj}_ses-1_${task}_${method}_sl-mask_T1w.nii.gz
+	srf_mask=${mask_folder}/${subj}_ses-1_${task}_${method}_srf-mask_T1w.nii.gz
+	srb_mask=${mask_folder}/${subj}_ses-1_${task}_${method}_srb-mask_T1w.nii.gz
+	sr_mask=${mask_folder}/${subj}_ses-1_${task}_${method}_sr-mask_T1w.nii.gz
+	sc_mask=${mask_folder}/${subj}_ses-1_${task}_${method}_sc-mask_T1w.nii.gz
 	target_mask=${subj}_ses-1_${task}_${method}_echo-1_part-mag_alligned_mask.nii.gz
-	left_cerebellum=${origin_nat}/${subj}_ses-1_${task}_${method}_lcerebellum-mask_T1w.nii.gz
-	right_cerebellum=${origin_nat}/${subj}_ses-1_${task}_${method}_rcerebellum-mask_T1w.nii.gz
-	brainsteam=${origin_nat}/${subj}_ses-1_${task}_${method}_brainsteam-mask_T1w.nii.gz
-	CSF=${origin_nat}/${subj}_ses-1_${task}_${method}_csf-mask_T1w.nii.gz
-	areas_not_interest=${origin_nat}/${subj}_ses-1_${task}_${method}_notbrain-mask_T1w.nii.gz
-	areas_not_interest_epi=${origin_nat}/${subj}_ses-1_${task}_${method}_notbrain-mask_epi.nii.gz
+	left_cerebellum=${mask_folder}/${subj}_ses-1_${task}_${method}_lcerebellum-mask_T1w.nii.gz
+	right_cerebellum=${mask_folder}/${subj}_ses-1_${task}_${method}_rcerebellum-mask_T1w.nii.gz
+	brainsteam=${mask_folder}/${subj}_ses-1_${task}_${method}_brainsteam-mask_T1w.nii.gz
+	CSF=${mask_folder}/${subj}_ses-1_${task}_${method}_csf-mask_T1w.nii.gz
+	areas_not_interest=${mask_folder}/${subj}_ses-1_${task}_${method}_notbrain-mask_T1w.nii.gz
+	areas_not_interest_epi=${mask_folder}/${subj}_ses-1_${task}_${method}_notbrain-mask_epi.nii.gz
 	wm_mask_seg=${origin_nat}/wm.nii.gz
-	wm_mask_seg_binary=${origin_nat}/wm_binary.nii.gz
-	wm_mask_tmp=${origin_nat}/${subj}_ses-1_${task}_${method}_wm-mask_tmpT1w.nii.gz
-	wm_mask=${origin_nat}/${subj}_ses-1_${task}_${method}_wm-mask_T1w.nii.gz
+	wm_mask_seg_binary=${mask_folder}/wm_binary.nii.gz
+	wm_mask_tmp=${mask_folder}/${subj}_ses-1_${task}_${method}_wm-mask_tmpT1w.nii.gz
+	wm_mask=${mask_folder}/${subj}_ses-1_${task}_${method}_wm-mask_T1w.nii.gz
 
 
 	# gm
 	if [[ $compute_mask == True ]];then
 		echo "making binary gm mask"
-		3dcalc -a ${origin_nat}/lh.ribbon.nii.gz -b ${origin_nat}/rh.ribbon.nii.gz -expr '(a+b)' -prefix ${gm_mask} -overwrite
+		3dcalc -a ${mask_folder}/lh.ribbon.nii.gz -b ${mask_folder}/rh.ribbon.nii.gz -expr '(a+b)' -prefix ${gm_mask} -overwrite
 
 		# subcortical left hemisphere mask
 
@@ -174,10 +184,10 @@ for volume in "${volumes[@]}"; do
 
 		# target mask
 
-		3dcalc -a ${gm_mask} -b ${sc_mask} -expr '(a+b)' -prefix ${origin_nat}/${subj}_ses-1_${task}_${method}_analysis-mask_T1w.nii.gz -overwrite
+		3dcalc -a ${gm_mask} -b ${sc_mask} -expr '(a+b)' -prefix ${mask_folder}/${subj}_ses-1_${task}_${method}_analysis-mask_T1w.nii.gz -overwrite
 
 
-		3dmask_tool -input ${origin_nat}/${subj}_ses-1_${task}_${method}_analysis-mask_T1w.nii.gz -prefix ${dilated_mask} -overwrite
+		3dmask_tool -input ${mask_folder}/${subj}_ses-1_${task}_${method}_analysis-mask_T1w.nii.gz -prefix ${dilated_mask} -overwrite
 	fi
 	if [[ ! -e ${masked_sbref} ]];then
 
@@ -221,7 +231,7 @@ for volume in "${volumes[@]}"; do
 		if [[ ${union_gm_wm} == True ]];then
 			3dcalc -a ${alligned_mask} -b ${dir}/${directory}/${subj}_ses-1_${task}_echo-1_part-mag_brain_mask-union.nii.gz  -expr '(a*b)' -prefix ${alligned_gmmask_union} -overwrite
 
-			cp ${alligned_gmmask_union} /scratch/mflores/Resting_State/analysis/${subj}_ses-1_${task}_echo-1_part-mag_gm_mask-union.nii.gz
+			cp ${alligned_gmmask_union} /scratch/mflores/Rest_HighRes/analysis/${subj}_ses-1_${task}_echo-1_part-mag_gm_mask-union.nii.gz
 
 			3dcalc -a  ${dir}/${directory}/${target}_gm.nii.gz -b ${alligned_gmmask_union} -expr '(a*b)' -prefix ${dir}/${directory}/${target}_gm_union.nii.gz -overwrite
 			3dcalc -a  ${dir}/${directory}/${target}_non-gm.nii.gz -b ${alligned_gmmask_union} -expr '(a*b)' -prefix ${dir}/${directory}/${target}_non-gm_union.nii.gz -overwrite
