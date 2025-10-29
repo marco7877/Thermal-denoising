@@ -1,10 +1,11 @@
-#!/bin/bash -xv
+#!/bin/bash 
 #SBATCH --partition=general
 #SBATCH --qos=regular
-#SBATCH --job-name=MEICA_Rest_HighRes
+#SBATCH --job-name=MEICA_Rest_HighRes_all
 #SBATCH --nodes=1
 #SBATCH --cpus-per-task=8
 #SBATCH --time=06:00:00
+#SBATCH --begin=now
 #SBATCH --mem=120G
 #SBATCH --array=1-10
 #SBATCH --mail-type=ALL,ARRAY_TASKS
@@ -22,16 +23,17 @@ echo "##################################################"
 echo "MEICA JOB ${SLURM_ARRAY_TASK_ID}"
 echo "##################################################"
 tasks=( "task-REST" )
-list_subj=( "001")
+list_subj=( "001" )
 runs=( "1" "2" )
-methods=("nordic" "mppca" "tmppca" "vanilla" "hydra")
+methods=( "vanilla" "mppca" "nordic" "hydra" "tmppca" )
 #methods=( "nordic" )
 counter=0
 tedana="True"
-t2smap="False"
+t2smap="True"
 residuals="False"
-halves="True"
+halves="False"
 necho=3
+multiple_runs="True"
 # ir residuals == true tedana and t2smap will not be useful
 # Define echo times for each dataset 
 
@@ -46,7 +48,7 @@ do
 			((counter++))
 			if [[ $counter -eq ${SLURM_ARRAY_TASK_ID} ]]; then
 				echo "Reached expected permutation value: ${SLURM_ARRAY_TASK_ID}"
-				break 4
+				break 3
 
 			fi
 		done
@@ -54,16 +56,28 @@ do
 done
 done
 tree=meica
-task=${tsk}_run-${run}
-#task=${tsk}
-if [[ ${task} = "task-HABLA1700" ]];then
-	echo_times="13.4 36.1 58.8 81.5"
-elif [[ ${task} = "task-HABLA1200" ]];then
-	echo_times="11.2 28.1 45 61.9"
-else 
+
+# define folders
+subj=sub-${n_sub}
+input=/scratch/mflores/Rest_HighRes/${subj}/ses-1/func_preproc_${method}
+output=/scratch/mflores/Rest_HighRes/${subj}/ses-1/func_preproc_${method}/tedana_${task}_${tree}
+
+if [[ $multiple_runs == "True" ]];then
+	task=${tsk}_run-${run}
 	echo_times="16 46.92 77.84"
+	mask_preproc=/data/mflores/Rest_HighRes/${subj}/ses-1/func_preproc_vanilla/${subj}_ses-1_${tsk}_run-1_echo-1_part-mag_brain_mask.nii.gz
+else
+	task=${tsk}
+	mask_preproc=/data/mflores/Rest_HighRes/${subj}/ses-1/func_preproc_vanilla/${subj}_ses-1_${tsk}_echo-1_part-mag_brain_mask.nii.gz
+	if [[ ${task} = "task-HABLA1700" ]];then
+		echo_times="13.4 36.1 58.8 81.5"
+	else
+		echo_times="11.2 28.1 45 61.9"
+	fi
 fi
 
+
+	echo "My reference mask is: ${mask_preproc}"
 echo "##################################################"
 echo "############# SUBJECT :${n_sub}      #############"
 echo "############# TASK :${task}          #############"
@@ -71,10 +85,6 @@ echo "############# METHOD :${method}            #############"
 echo "############# TREE :${tree}            #############"
 echo "##################################################"
 
-# define folders
-subj=sub-${n_sub}
-input=/data/mflores/Rest_HighRes/${subj}/ses-1/func_preproc_${method}
-output=/scratch/mflores/Rest_HighRes/${subj}/ses-1/func_preproc_${method}/tedana_${task}_${tree}
 
 
 if [[ ${residuals} = "True" ]];then
@@ -102,16 +112,14 @@ for volume in "${volumes[@]}"; do
 
 	# Define mask volume and create symbolic link
 
-	#mask_preproc=${input}/${subj}_ses-1_${task}_run-${run}_part-mag_desc-brain_mask.nii.gz
-	mask_preproc=/data/mflores/Rest_HighRes/${subj}/ses-1/func_preproc_vanilla/${subj}_ses-1_${tsk}_run-1_echo-1_part-mag_brain_mask.nii.gz
 
-	echo "My reference mask is: ${mask_preproc}"
-
-	# make a list from 1 to 4 with 1 length digits
-	echo "List of echoes is ${list_echoes}"
 
 	# generate string with filenames of echoes for tedana
 	list_echoes=($(seq 2 ${necho}))
+	
+	# make a list from 1 to 4 with 1 length digits
+	echo "List of echoes is ${list_echoes}"
+	
 	for n_echo in "${list_echoes[@]}"
 	do
 		mag=$part_mag" "${input}/${subj}_ses-1_${task}_echo-${n_echo}_part-mag_${part}_${method}_mcf_al${ext}
@@ -149,7 +157,7 @@ for volume in "${volumes[@]}"; do
 			echo "##################################################"
 			echo "t2smap -d ${mag} -e ${echo_times} --out-dir ${out_dir}/t2smap${volume} --mask ${mask_preproc} --masktype none --fittype loglin --fitmode ts"
 			echo "##################################################"
-			t2smap -d ${mag} -e ${echo_times} --out-dir ${out_dir}/t2smap${volume} --mask ${mask_preproc} --masktype none --fittype loglin --fitmode ts 
+			t2smap -d ${mag} -e ${echo_times} --out-dir ${out_dir}/t2smap${volume} --mask ${mask_preproc} --masktype none --fittype loglin --fitmode ts --overwrite 
 
 			rmdir --ignore-fail-on-non-empty ${out_dir}/t2smap${volume}
 		fi
