@@ -58,13 +58,6 @@ echo "############# RESIDUALS == ${residuals}          #############"
 echo "############# calculating matrix == :${trans_matrix}          #############"
 echo "##################################################"
 
-if [[ ${multiple_runs} == "True" ]];then
-task=${tsk}_run-${run}
-sbref=${input}/${subj}_ses-1_${tsk}_run-1_echo-1_part-mag_sbref.nii.gz
-else
-task=${tsk}
-sbref=${input}/${subj}_ses-1_${tsk}_echo-1_part-mag_sbref.nii.gz
-fi
 preproc=func_preproc_${method}
 
 # define folders
@@ -73,6 +66,14 @@ output=/scratch/mflores/Rest_HighRes/${subj}/ses-1/${preproc}
 matrix_dir=/scratch/mflores/Rest_HighRes/${subj}/ses-1/func_preproc_vanilla
 input=/data/mflores/Rest_HighRes/${subj}/ses-1/func
 
+
+if [[ ${multiple_runs} == "True" ]];then
+task=${tsk}_run-${run}
+sbref=${input}/${subj}_ses-1_${tsk}_run-1_echo-1_part-mag_sbref.nii.gz
+else
+task=${tsk}
+sbref=${input}/${subj}_ses-1_${tsk}_echo-1_part-mag_sbref.nii.gz
+fi
 
 mkdir -p ${output}
 
