@@ -1,17 +1,17 @@
 #!/bin/bash 
 #SBATCH --partition=general
 #SBATCH --qos=regular
-#SBATCH --job-name=MEICA_Rest_HighRes_all
+#SBATCH --job-name=MEICA_Resting_State_all
 #SBATCH --nodes=1
 #SBATCH --cpus-per-task=8
 #SBATCH --time=06:00:00
 #SBATCH --begin=now
 #SBATCH --mem=120G
-#SBATCH --array=1-10
+#SBATCH --array=1-50
 #SBATCH --mail-type=ALL,ARRAY_TASKS
 #SBATCH --mail-user=mflores@bcbl.eu
-#SBATCH --error=/scratch/mflores/Rest_HighRes/logs/%x_%a_%j.txt
-#SBATCH --output=/scratch/mflores/Rest_HighRes/logs/%x_%a_%j.txt
+#SBATCH --error=/scratch/mflores/Resting_State/logs/%x_%a_%j.txt
+#SBATCH --output=/scratch/mflores/Resting_State/logs/%x_%a_%j.txt
 
 module load Miniforge3
 source activate /data/mflores/TEDANA/
@@ -22,8 +22,8 @@ source activate /data/mflores/TEDANA/
 echo "##################################################"
 echo "MEICA JOB ${SLURM_ARRAY_TASK_ID}"
 echo "##################################################"
-tasks=( "task-REST" )
-list_subj=( "001" )
+tasks=( "task-HABLA1200" "task-HABLA1700" )
+list_subj=( "001" "002" "003" "004" "005" )
 runs=( "1" "2" )
 methods=( "vanilla" "mppca" "nordic" "hydra" "tmppca" )
 #methods=( "nordic" )
@@ -32,8 +32,8 @@ tedana="True"
 t2smap="True"
 residuals="False"
 halves="False"
-necho=3
-multiple_runs="True"
+necho=4
+multiple_runs="False"
 # ir residuals == true tedana and t2smap will not be useful
 # Define echo times for each dataset 
 
@@ -43,38 +43,38 @@ do
 	do
 		for method in "${methods[@]}"
 		do
-			for run in "${runs[@]}"
-			do
+#			for run in "${runs[@]}"
+#			do
 			((counter++))
 			if [[ $counter -eq ${SLURM_ARRAY_TASK_ID} ]]; then
 				echo "Reached expected permutation value: ${SLURM_ARRAY_TASK_ID}"
 				break 3
 
 			fi
-		done
+#		done
 	done
 done
 done
 tree=meica
 
-# define folders
 subj=sub-${n_sub}
-input=/scratch/mflores/Rest_HighRes/${subj}/ses-1/func_preproc_${method}
-output=/scratch/mflores/Rest_HighRes/${subj}/ses-1/func_preproc_${method}/tedana_${task}_${tree}
-
 if [[ $multiple_runs == "True" ]];then
 	task=${tsk}_run-${run}
 	echo_times="16 46.92 77.84"
-	mask_preproc=/data/mflores/Rest_HighRes/${subj}/ses-1/func_preproc_vanilla/${subj}_ses-1_${tsk}_run-1_echo-1_part-mag_brain_mask.nii.gz
+	mask_preproc=/data/mflores/Resting_State/${subj}/ses-1/func_preproc_vanilla/${subj}_ses-1_${tsk}_run-1_echo-1_part-mag_brain_mask.nii.gz
 else
 	task=${tsk}
-	mask_preproc=/data/mflores/Rest_HighRes/${subj}/ses-1/func_preproc_vanilla/${subj}_ses-1_${tsk}_echo-1_part-mag_brain_mask.nii.gz
+	mask_preproc=/data/mflores/Resting_State/${subj}/ses-1/func_preproc_vanilla/${subj}_ses-1_${tsk}_echo-1_part-mag_brain_mask.nii.gz
 	if [[ ${task} = "task-HABLA1700" ]];then
 		echo_times="13.4 36.1 58.8 81.5"
 	else
 		echo_times="11.2 28.1 45 61.9"
 	fi
 fi
+
+# define folders
+input=/data/mflores/Resting_State/${subj}/ses-1/func_preproc_${method}
+output=/scratch/mflores/Resting_State/${subj}/ses-1/func_preproc_${method}/tedana_${task}_${tree}
 
 
 	echo "My reference mask is: ${mask_preproc}"
@@ -127,11 +127,11 @@ for volume in "${volumes[@]}"; do
 	done
 
 	if [[ $residuals == "True" ]];then
-		input_weights=/data/mflores/Rest_HighRes/${subj}/ses-1/func_preproc_vanilla/tedana_${task}_${tree}bold
+		input_weights=/data/mflores/Resting_State/${subj}/ses-1/func_preproc_vanilla/tedana_${task}_${tree}bold
 		echo "##################################################"
 		echo "Making OC from residuals"
 		echo "##################################################"
-		mask_preproc=/data/mflores/Rest_HighRes/analysis_timeSeries/${subj}_ses-1_${task}_echo-1_part-mag_brain_mask-union.nii.gz
+		mask_preproc=/data/mflores/Resting_State/analysis_timeSeries/${subj}_ses-1_${task}_echo-1_part-mag_brain_mask-union.nii.gz
 		part_mag1=${input}/${subj}_ses-1_${task}_echo-1_part-mag_${part}_${method}_mcf_al${ext}
 		part_mag2=${input}/${subj}_ses-1_${task}_echo-2_part-mag_${part}_${method}_mcf_al${ext}
 		part_mag3=${input}/${subj}_ses-1_${task}_echo-3_part-mag_${part}_${method}_mcf_al${ext}
@@ -141,7 +141,7 @@ for volume in "${volumes[@]}"; do
 		weight_mag3=${input_weights}/${subj}_${task}_OC_echo-3_weight.nii.gz
 		weight_mag4=${input_weights}/${subj}_${task}_OC_echo-4_weight.nii.gz
 
-		3dcalc -a ${part_mag1} -b ${part_mag2} -c ${part_mag3} -d ${part_mag4} -e ${weight_mag1} -f ${weight_mag2} -g ${weight_mag3} -h ${weight_mag4} -m ${mask_preproc}  -expr '(a*e+b*f+c*g+d*h)*m' -prefix /scratch/mflores/Rest_HighRes/${subj}/ses-1/func_preproc_${method}/tedana_${task}_${tree}${part}${volume}/desc-optcom_bold.nii.gz -overwrite 
+		3dcalc -a ${part_mag1} -b ${part_mag2} -c ${part_mag3} -d ${part_mag4} -e ${weight_mag1} -f ${weight_mag2} -g ${weight_mag3} -h ${weight_mag4} -m ${mask_preproc}  -expr '(a*e+b*f+c*g+d*h)*m' -prefix /scratch/mflores/Resting_State/${subj}/ses-1/func_preproc_${method}/tedana_${task}_${tree}${part}${volume}/desc-optcom_bold.nii.gz -overwrite 
 	else
 
 		if [[ $tedana == "True" ]];then
