@@ -1,16 +1,16 @@
-#!/bin/bash -xv
+#!/bin/bash 
 #SBATCH --partition=general
 #SBATCH --qos=regular
-#SBATCH --job-name=HYDRA_Rest_HighRes
+#SBATCH --job-name=HYDRA_MEVOTLOC_all_
 #SBATCH --nodes=1
 #SBATCH --cpus-per-task=16
 #SBATCH --time=5:00:00
-#SBATCH --mem=90G
-#SBATCH --array=1-2
+#SBATCH --mem=240G
+#SBATCH --array=1-40
 #SBATCH --mail-type=ALL
 #SBATCH --mail-user=mflores@bcbl.eu
-#SBATCH --error=/scratch/mflores/Rest_HighRes/logs/%x_%a_%j.txt
-#SBATCH --output=/scratch/mflores/Rest_HighRes/logs/%x_%a_%j.txt
+#SBATCH --error=/scratch/mflores/MEVOTLOC/logs/%x_%a_%j.txt
+#SBATCH --output=/scratch/mflores/MEVOTLOC/logs/%x_%a_%j.txt
 
 
 
@@ -21,37 +21,45 @@ echo "##################################################"
 echo "HYDRA JOB ${SLURM_ARRAY_TASK_ID}"
 echo "##################################################"
 
-list_task=( "task-REST" )
-runs=( "1" "2" )
-list_subj=( "001")
+tsk=( "task-fLoc" )
+
+session=( "ses-01" "ses-02" "ses-03" "ses-04" )
+
+list_run=( "1" "2" "3" "4" "5" "6" "7" "8" "9" "10" )
+
+list_subj=("001")
+
 counter=0
+
 make_residuals="True"
-halves="True"
+
+halves="False"
+
 for n_sub in "${list_subj[@]}" 
 do
-	for tsk in "${list_task[@]}"
+	for session in "${sessions[@]}"
 	do
-		for run in "${runs[@]}"
+		for RUN in "${list_run[@]}"
 		do
-		((counter++))
-		if [[ $counter -eq ${SLURM_ARRAY_TASK_ID} ]]; then
-			echo "Reached expected permutation value: ${SLURM_ARRAY_TASK_ID}"
-			break 3
+			((counter++))
+			if [[ $counter -eq ${SLURM_ARRAY_TASK_ID} ]]; then
+				echo "Reached expected permutation value: ${SLURM_ARRAY_TASK_ID}"
+				break 3
 
-		fi
+			fi
+		done
 	done
 done
-done
+
 method=hydra
 preproc=func_preproc_${method}
 
-
 subj=sub-${n_sub}
-task=${tsk}_run-${run}
-#task=${tsk}
+task=${session}_${tsk}_run-${RUN}
+#task=${session}_${tsk}
 repo=/home/mflores/scripts
-origin=/data/mflores/Rest_HighRes/${subj}/ses-1/func_preproc_vanilla
-output=/scratch/mflores/Rest_HighRes/${subj}/ses-1/${preproc}
+origin=/data/mflores/MEVOTLOC/${subj}/${session}/func_preproc_vanilla
+output=/scratch/mflores/MEVOTLOC/${subj}/${session}/${preproc}
 noise=3 # number of noise volumes
 save_gfactor=1 # save gfactor map = 1 (saves gfactor and runs nordic); = 2 (saves gfactor and stops)  
 nechoes=3
@@ -70,11 +78,11 @@ mkdir -p ${output}/tmp
 
 echo "*************************************************************"
 # Reference outputal volumnes
-part_mag=/data/mflores/Rest_HighRes/${subj}/ses-1/${preproc}/${subj}_ses-1_${task}_echo-1_part-mag_bold_${method}_dsd.nii.gz
+part_mag=/data/mflores/MEVOTLOC/${subj}/$session/${preproc}/${subj}_$session_${task}_echo-1_part-mag_bold_${method}_dsd.nii.gz
 
 echo "My reference part_mag is: ${part_mag}"
 
-part_phase=/data/mflores/Rest_HighRes/${subj}/ses-1/${preproc}/${subj}_ses-1_${task}_echo-1_part-phase_bold_${method}_dsd.nii.gz
+part_phase=/data/mflores/MEVOTLOC/${subj}/$session/${preproc}/${subj}_$session_${task}_echo-1_part-phase_bold_${method}_dsd.nii.gz
 
 echo "My reference part_phase is: ${part_phase}"
 
@@ -97,9 +105,9 @@ for n_echo in "${list_aggregate[@]}"
 
 do
 
-	mag=$part_mag" "/data/mflores/Rest_HighRes/${subj}/ses-1/${preproc}/${subj}_ses-1_${task}_echo-${n_echo}_part-mag_bold_${method}_dsd.nii.gz
+	mag=$part_mag" "/data/mflores/MEVOTLOC/${subj}/$session/${preproc}/${subj}_$session_${task}_echo-${n_echo}_part-mag_bold_${method}_dsd.nii.gz
 
-	phase=$part_phase" "/data/mflores/Rest_HighRes/${subj}/ses-1/${preproc}/${subj}_ses-1_${task}_echo-${n_echo}_part-phase_bold_${method}_dsd.nii.gz
+	phase=$part_phase" "/data/mflores/MEVOTLOC/${subj}/$session/${preproc}/${subj}_$session_${task}_echo-${n_echo}_part-phase_bold_${method}_dsd.nii.gz
 
 	part_mag=$mag
 
@@ -111,14 +119,14 @@ done
 echo "Magnitude volumes to concatenate are: $part_mag"
 
 echo "Phase volumes to concatenate are: $part_phase"
-3dZcat $part_mag -prefix ${output}/${subj}_ses-1_${task}_echoes_part-mag_bold_${method}_dsd.nii.gz -overwrite
+3dZcat $part_mag -prefix ${output}/${subj}_$session_${task}_echoes_part-mag_bold_${method}_dsd.nii.gz -overwrite
 
-3dZcat $part_phase -prefix ${output}/${subj}_ses-1_${task}_echoes_part-phase_bold_${method}_dsd.nii.gz -overwrite
+3dZcat $part_phase -prefix ${output}/${subj}_$session_${task}_echoes_part-phase_bold_${method}_dsd.nii.gz -overwrite
 
 
 if [[ $halves == "True" ]]; then
 
-	volumes=$(3dinfo -nvi ${output}/${subj}_ses-1_${task}_echoes_part-mag_bold_${method}_dsd.nii.gz)
+	volumes=$(3dinfo -nvi ${output}/${subj}_$session_${task}_echoes_part-mag_bold_${method}_dsd.nii.gz)
 	noise_vol=$(($volumes-$(($noise-1))))
 	signal_vol=$(($noise_vol-1))
 	vol_half=$(($noise_vol/2))
@@ -127,86 +135,86 @@ if [[ $halves == "True" ]]; then
 	echo "After taking out noise scans we have ${noise_vol} volumes"
 	echo "Half of the data set is ${vol_half}"
 
-		part_mag="${output}/${subj}_ses-1_${task}_echoes_part-mag_bold_${method}_dsd"
+	part_mag="${output}/${subj}_$session_${task}_echoes_part-mag_bold_${method}_dsd"
 
-		part_mag_half1="${output}/${subj}_ses-1_${task}_echoes_part-mag_bold_${method}_dsd1"
+	part_mag_half1="${output}/${subj}_$session_${task}_echoes_part-mag_bold_${method}_dsd1"
 
-		part_mag_half2="${output}/${subj}_ses-1_${task}_echoes_part-mag_bold_${method}_dsd2"
+	part_mag_half2="${output}/${subj}_$session_${task}_echoes_part-mag_bold_${method}_dsd2"
 
-		part_mag_out1="${subj}_ses-1_${task}_echoes_part-mag_bold_${method}N1"
+	part_mag_out1="${subj}_$session_${task}_echoes_part-mag_bold_${method}N1"
 
-		part_mag_out2="${subj}_ses-1_${task}_echoes_part-mag_bold_${method}N2"
+	part_mag_out2="${subj}_$session_${task}_echoes_part-mag_bold_${method}N2"
 
-		part_phase="${output}/${subj}_ses-1_${task}_echoes_part-phase_bold_${method}_dsd"
+	part_phase="${output}/${subj}_$session_${task}_echoes_part-phase_bold_${method}_dsd"
 
-		part_phase_half1="${output}/${subj}_ses-1_${task}_echoes_part-phase_bold_${method}_dsd1"
+	part_phase_half1="${output}/${subj}_$session_${task}_echoes_part-phase_bold_${method}_dsd1"
 
-		part_phase_half2="${output}/${subj}_ses-1_${task}_echoes_part-phase_bold_${method}_dsd2"
+	part_phase_half2="${output}/${subj}_$session_${task}_echoes_part-phase_bold_${method}_dsd2"
 
-		noise_mag="${output}/${subj}_ses-1_${task}_echoes_part-mag_noise_${method}"
+	noise_mag="${output}/${subj}_$session_${task}_echoes_part-mag_noise_${method}"
 
-		noise_phase="${output}/${subj}_ses-1_${task}_echoes_part-phase_noise_${method}"
+	noise_phase="${output}/${subj}_$session_${task}_echoes_part-phase_noise_${method}"
 
-		echo "Cutting volumes in halves"
+	echo "Cutting volumes in halves"
 
-		echo "Unsplitted time series has ${volumes} volumes"
-		echo "After taking out noise scans we have ${noise_vol} volumes"
-		echo "Half of the data set is ${vol_half}"
+	echo "Unsplitted time series has ${volumes} volumes"
+	echo "After taking out noise scans we have ${noise_vol} volumes"
+	echo "Half of the data set is ${vol_half}"
 
-		echo  "3dcalc  -a "${part_mag}.nii.gz[${noise_vol}..$]" -expr "a" -prefix ${noise_mag}.nii.gz -overwrite"
-		3dcalc -a "${part_mag}.nii.gz[${noise_vol}..$]" -expr "a" -prefix ${noise_mag}.nii.gz -overwrite
-		echo "3dcalc -a "${part_phase}.nii.gz[${noise_vol}..$]" -expr "a" -prefix ${noise_phase}.nii.gz -overwrite"
-		3dcalc -a "${part_phase}.nii.gz[${noise_vol}..$]" -expr "a" -prefix ${noise_phase}.nii.gz -overwrite
+	echo  "3dcalc  -a "${part_mag}.nii.gz[${noise_vol}..$]" -expr "a" -prefix ${noise_mag}.nii.gz -overwrite"
+	3dcalc -a "${part_mag}.nii.gz[${noise_vol}..$]" -expr "a" -prefix ${noise_mag}.nii.gz -overwrite
+	echo "3dcalc -a "${part_phase}.nii.gz[${noise_vol}..$]" -expr "a" -prefix ${noise_phase}.nii.gz -overwrite"
+	3dcalc -a "${part_phase}.nii.gz[${noise_vol}..$]" -expr "a" -prefix ${noise_phase}.nii.gz -overwrite
 
 
-		3dcalc -a "${part_mag}.nii.gz[0..${vol_half_end}]" -expr "a" -prefix ${part_mag_half1}u.nii.gz -overwrite
+	3dcalc -a "${part_mag}.nii.gz[0..${vol_half_end}]" -expr "a" -prefix ${part_mag_half1}u.nii.gz -overwrite
 
-		3dTcat -prefix ${part_mag_half1}.nii.gz ${part_mag_half1}u.nii.gz "${noise_mag}.nii.gz[1]" -overwrite
+	3dTcat -prefix ${part_mag_half1}.nii.gz ${part_mag_half1}u.nii.gz "${noise_mag}.nii.gz[1]" -overwrite
 
-		rm ${part_mag_half1}u.nii.gz
-		
-		3dcalc -a "${part_mag}.nii.gz[${vol_half}..${signal_vol}]" -expr "a" -prefix ${part_mag_half2}u.nii.gz -overwrite
+	rm ${part_mag_half1}u.nii.gz
 
-		3dTcat -prefix ${part_mag_half2}.nii.gz ${part_mag_half2}u.nii.gz "${noise_mag}.nii.gz[2]" -overwrite
-		
-		rm ${part_mag_half2}u.nii.gz
-		
-		3dcalc -a "${part_phase}.nii.gz[0..${vol_half_end}]" -expr "a" -prefix ${part_phase_half1}u.nii.gz -overwrite
+	3dcalc -a "${part_mag}.nii.gz[${vol_half}..${signal_vol}]" -expr "a" -prefix ${part_mag_half2}u.nii.gz -overwrite
 
-		3dTcat -prefix ${part_phase_half1}.nii.gz ${part_phase_half1}u.nii.gz "${noise_phase}.nii.gz[1]" -overwrite
-		
-		rm ${part_phase_half1}u.nii.gz
+	3dTcat -prefix ${part_mag_half2}.nii.gz ${part_mag_half2}u.nii.gz "${noise_mag}.nii.gz[2]" -overwrite
 
-		3dcalc -a "${part_phase}.nii.gz[${vol_half}..${signal_vol}]" -expr "a" -prefix ${part_phase_half2}u.nii.gz -overwrite
+	rm ${part_mag_half2}u.nii.gz
 
-		3dTcat -prefix ${part_phase_half2}.nii.gz ${part_phase_half2}u.nii.gz "${noise_phase}.nii.gz[2]" -overwrite
-		
-		rm ${part_phase_half2}u.nii.gz
-		
-		mags=(${part_mag_half1} ${part_mag_half2})
-		
-		phases=(${part_phase_half1} ${part_phase_half2})
-		
-		outs=(${part_mag_out1} ${part_mag_out2})
+	3dcalc -a "${part_phase}.nii.gz[0..${vol_half_end}]" -expr "a" -prefix ${part_phase_half1}u.nii.gz -overwrite
+
+	3dTcat -prefix ${part_phase_half1}.nii.gz ${part_phase_half1}u.nii.gz "${noise_phase}.nii.gz[1]" -overwrite
+
+	rm ${part_phase_half1}u.nii.gz
+
+	3dcalc -a "${part_phase}.nii.gz[${vol_half}..${signal_vol}]" -expr "a" -prefix ${part_phase_half2}u.nii.gz -overwrite
+
+	3dTcat -prefix ${part_phase_half2}.nii.gz ${part_phase_half2}u.nii.gz "${noise_phase}.nii.gz[2]" -overwrite
+
+	rm ${part_phase_half2}u.nii.gz
+
+	mags=(${part_mag_half1} ${part_mag_half2})
+
+	phases=(${part_phase_half1} ${part_phase_half2})
+
+	outs=(${part_mag_out1} ${part_mag_out2})
 fi
 for ext in "${extentions[@]}"; do
-if [[ $ext == "" ]]; then
-	noise=3
-else
-	noise=1
-fi
+	if [[ $ext == "" ]]; then
+		noise=3
+	else
+		noise=1
+	fi
 	temp_nordic=$(mktemp ${output}/tmp/nordicXXXXXX.m)
-	
+
 	echo "*************************************************************"
-	echo "addpath(genpath('/home/mflores/nordic'));cd '${repo}';ARG.temporal_phase=1;ARG.noise_volume_last=${noise};ARG.phase_filter_width=10;ARG.save_add_info=1;ARG.save_gfactor_map=${save_gfactor};ARG.DIROUT='${output}/';NIFTI_NORDIC('${output}/${subj}_ses-1_${task}_echoes_part-mag_bold_${method}_dsd${ext}.nii.gz','${output}/${subj}_ses-1_${task}_echoes_part-phase_bold_${method}_dsd${ext}.nii.gz','${subj}_ses-1_${task}_echoes_part-mag_bold_${method}${ext}',ARG);" > $temp_nordic
+	echo "addpath(genpath('/home/mflores/nordic'));cd '${repo}';ARG.temporal_phase=1;ARG.noise_volume_last=${noise};ARG.phase_filter_width=10;ARG.save_add_info=1;ARG.save_gfactor_map=${save_gfactor};ARG.DIROUT='${output}/';NIFTI_NORDIC('${output}/${subj}_$session_${task}_echoes_part-mag_bold_${method}_dsd${ext}.nii.gz','${output}/${subj}_$session_${task}_echoes_part-phase_bold_${method}_dsd${ext}.nii.gz','${subj}_$session_${task}_echoes_part-mag_bold_${method}${ext}',ARG);" > $temp_nordic
 
 	matlab -batch "run('$temp_nordic');exit" 
 
 
-	gzip -f ${output}/${subj}_ses-1_${task}_echoes_part-mag_bold_${method}${ext}.nii
+	gzip -f ${output}/${subj}_$session_${task}_echoes_part-mag_bold_${method}${ext}.nii
 
 
-	z_orig=$(3dinfo -nk ${origin}/${subj}_ses-1_${task}_echo-1_part-mag_bold_${method}_dsd${ext}.nii.gz
+	z_orig=$(3dinfo -nk ${origin}/${subj}_$session_${task}_echo-1_part-mag_bold_vanilla${ext}.nii.gz
 	)
 	start=0
 
@@ -217,19 +225,19 @@ fi
 	do
 
 		echo "*************************************************************"
-		echo "3dZcutup -prefix ${output}/${subj}_ses-1_${task}_echo-${n_echoe}_part-mag_bold_${method}${ext}.nii.gz -keep ${start} ${finish} ${output}/${subj}_ses-1_${task}_echoes_part-mag_bold_${method}_dsd${ext}.nii.gz -overwrite"
+		echo "3dZcutup -prefix ${output}/${subj}_$session_${task}_echo-${n_echoe}_part-mag_bold_${method}${ext}.nii.gz -keep ${start} ${finish} ${output}/${subj}_$session_${task}_echoes_part-mag_bold_${method}_dsd${ext}.nii.gz -overwrite"
 
-		3dZcutup -prefix ${output}/${subj}_ses-1_${task}_echo-${n_echoe}_part-mag_bold_${method}${ext}.nii.gz -keep ${start} ${finish} ${output}/${subj}_ses-1_${task}_echoes_part-mag_bold_${method}${ext}.nii.gz -overwrite
+		3dZcutup -prefix ${output}/${subj}_$session_${task}_echo-${n_echoe}_part-mag_bold_${method}${ext}.nii.gz -keep ${start} ${finish} ${output}/${subj}_$session_${task}_echoes_part-mag_bold_${method}${ext}.nii.gz -overwrite
 
 
 		start=$(($start+$z_orig))
 
 		finish=$(($finish+$z_orig))
 	done
-	
-	ATR=$( 3dAttribute IJK_TO_DICOM_REAL ${output}/${subj}_ses-1_${task}_echo-1_part-mag_bold_${method}${ext}.nii.gz )
 
-	volumes=$(3dinfo -nvi ${output}/${subj}_ses-1_${task}_echo-1_part-mag_bold_${method}${ext}.nii.gz)
+	ATR=$( 3dAttribute IJK_TO_DICOM_REAL ${output}/${subj}_$session_${task}_echo-1_part-mag_bold_${method}${ext}.nii.gz )
+
+	volumes=$(3dinfo -nvi ${output}/${subj}_$session_${task}_echo-1_part-mag_bold_${method}${ext}.nii.gz)
 
 	vol=$(($volumes-$noise))
 
@@ -239,18 +247,18 @@ fi
 
 	do
 
-		3drefit -atrfloat IJK_TO_DICOM_REAL "${ATR}" ${output}/${subj}_ses-1_${task}_echo-${n_echoe}_part-mag_bold_${method}${ext}.nii.gz
+		3drefit -atrfloat IJK_TO_DICOM_REAL "${ATR}" ${output}/${subj}_$session_${task}_echo-${n_echoe}_part-mag_bold_${method}${ext}.nii.gz
 
 		# Removing last noise volumes
 
-		echo "removing noise to ${output}/${subj}_ses-1_${task}_echo-${n_echoe}_part-mag_bold_${method}${ext}.nii.gz"
+		echo "removing noise to ${output}/${subj}_$session_${task}_echo-${n_echoe}_part-mag_bold_${method}${ext}.nii.gz"
 
-		3dcalc -a "${output}/${subj}_ses-1_${task}_echo-${n_echoe}_part-mag_bold_${method}${ext}.nii.gz[0..${vol}]" -expr 'a' -prefix ${output}/${subj}_ses-1_${task}_echo-${n_echoe}_part-mag_bold_${method}${ext}.nii.gz -overwrite
-	if [[ $make_residualds == "True" ]]; then
-		echo "Making residuals between vanilla and denoised volumes"
-		3dcalc -a ${output}/${subj}_ses-1_${task}_echo-${n_echoe}_part-mag_bold_${method}${ext}.nii.gz -b ${origin}/${subj}_ses-1_${task}_echo-${n_echoe}_part-mag_bold_vanilla${ext}.nii.gz -expr '(b-a)' -prefix ${output}/${subj}_ses-1_${task}_echo-${n_echoe}_part-mag_residuals_${method}${ext}.nii.gz
-	fi
-done
+		3dcalc -a "${output}/${subj}_$session_${task}_echo-${n_echoe}_part-mag_bold_${method}${ext}.nii.gz[0..${vol}]" -expr 'a' -prefix ${output}/${subj}_$session_${task}_echo-${n_echoe}_part-mag_bold_${method}${ext}.nii.gz -overwrite
+		if [[ $make_residualds == "True" ]]; then
+			echo "Making residuals between vanilla and denoised volumes"
+			3dcalc -a ${output}/${subj}_$session_${task}_echo-${n_echoe}_part-mag_bold_${method}${ext}.nii.gz -b ${origin}/${subj}_$session_${task}_echo-${n_echoe}_part-mag_bold_vanilla${ext}.nii.gz -expr '(b-a)' -prefix ${output}/${subj}_$session_${task}_echo-${n_echoe}_part-mag_residuals_${method}${ext}.nii.gz
+		fi
+	done
 done
 
 
