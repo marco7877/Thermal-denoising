@@ -51,7 +51,7 @@ from scipy.stats import pearsonr
 ###### Functions ##############################
 ###############################################
 def reliability_analysis(
-    epi_fname, mask, sbref, plot=True, savecorr=False, hist=True, make_nifti=True
+    epi_fname, mask, sbref, plot=True, savecorr=True, hist=True, make_nifti=True
 ):
     # Define variables
     array_dict = {}
@@ -232,65 +232,59 @@ def reliability_analysis(
 ###############################################
 
 
-source_dir = "/bcbl/home/public/MarcoMotion/Resting_State/analysis_timeSeries"
-methods = ["vanilla", "nordic", "tmmpca", "mppca", "nordic", "hydra"]
-subjects = ["sub-001", "sub-002", "sub-003", "sub-004", "sub-005"]
-tasks = ["task-HABLA1200", "task-HABLA1700"]
-
+source_dir = "/scratch/mflores/Rest_HighRes/analysis_timeSeries"
+methods = ["vanilla", "nordic", "tmmpca", "nordic", "hydra"]
+subjects = ["sub-001"]
+tasks = ["task-REST"]
+runs = ["_run-1", "_run-2"]
 for subject in subjects:
     for task in tasks:
         for method in methods:
-            base_name = source_dir + "/" + subject + "_ses-1_" + task
+            for run in runs:
+                base_name = source_dir + "/" + subject + "_ses-1_" + task + run
+                mask = base_name + "_echo-1_part-mag_gm_mask-union.nii.gz"
+                sbref = ("/scratch/mflores/Resting_State/analysis/"
+                        + subject
+                        + "_ses-1_"
+                        + task
+                        + "_echo-1_part-mag_masked_sbref.nii.gz"
+                        )
+                # EPI, Split
+                try:
+                    epi = [base_name + "_OC_part-mag_bold_" + method + ".nii.gz"]
+                    print("LOG: Attempting EPI, split reliability analysis")
+                    reliability_analysis(epi, mask, sbref)
+                except Exception:
+                    print(f"ERROR: {subject}, task:{task}, and method:{method} one time series")
 
-            mask = base_name + "_echo-1_part-mag_gm_mask-union.nii.gz"
-
-            sbref = (
-                "/bcbl/home/public/MarcoMotion/Resting_State/analysis/"
-                + subject
-                + "_ses-1_"
-                + task
-                + "_echo-1_part-mag_masked_sbref.nii.gz"
-            )
-
-            # EPI, Split
-            try:
-                epi = [base_name + "_OC_part-mag_bold_" + method + ".nii.gz"]
-                print("LOG: Attempting EPI, split reliability analysis")
-                reliability_analysis(epi, mask, sbref)
-            except Exception:
-                print(
-                    f"ERROR: {subject}, task:{task}, and method:{method} one time series"
-                )
-
-            # EPI, Series
-            try:
-                epi_series = [
-                    base_name + "_OC_part-mag_bold_" + method + "1.nii.gz",
-                    base_name + "_OC_part-mag_bold_" + method + "2.nii.gz",
-                ]
-
-                print("LOG: Attempting EPI, series reliability analysis")
-                reliability_analysis(epi_series, mask, sbref)
-            except Exception:
-                print(f"ERROR: {subject}, task:{task}, and method:{method} episeries")
+                # EPI, Series
+                try:
+                    epi_series = [
+                            base_name + "_OC_part-mag_bold_" + method + "1.nii.gz",
+                            base_name + "_OC_part-mag_bold_" + method + "2.nii.gz",
+                            ]
+                    print("LOG: Attempting EPI, series reliability analysis")
+                    reliability_analysis(epi_series, mask, sbref)
+                except Exception:
+                    print(f"ERROR: {subject}, task:{task}, and method:{method} episeries")
 
             # Residuals, from split
-            try:
-                residual = [
-                    base_name + "_residuals_part-mag_bold_" + method + ".nii.gz"
-                ]
-                print("LOG: Attempting residuals, split reliability analysis")
-                reliability_analysis(residual, mask, sbref)
-            except Exception:
-                print(f"ERROR: {subject}, task:{task}, and method:{method} residual")
+#            try:
+#                residual = [
+#                    base_name + "_residuals_part-mag_bold_" + method + ".nii.gz"
+#                ]
+#                print("LOG: Attempting residuals, split reliability analysis")
+#                reliability_analysis(residual, mask, sbref)
+#            except Exception:
+#                print(f"ERROR: {subject}, task:{task}, and method:{method} residual")
 
             # Residuals, from series
-            try:
-                residual_series = [
-                    base_name + "_residuals_part-mag_bold_" + method + "1.nii.gz",
-                    base_name + "_residuals_part-mag_bold_" + method + "2.nii.gz",
-                ]
-                print("LOG: Attempting residuals, series reliability analysis")
-                reliability_analysis(residual_series, mask, sbref)
-            except Exception:
-                print("Error in residuals time series")
+#            try:
+#                residual_series = [
+#                    base_name + "_residuals_part-mag_bold_" + method + "1.nii.gz",
+#                    base_name + "_residuals_part-mag_bold_" + method + "2.nii.gz",
+#                ]
+#                print("LOG: Attempting residuals, series reliability analysis")
+#                reliability_analysis(residual_series, mask, sbref)
+#            except Exception:
+#                print("Error in residuals time series")
