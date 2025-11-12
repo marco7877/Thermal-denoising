@@ -51,7 +51,7 @@ from scipy.stats import pearsonr
 ###### Functions ##############################
 ###############################################
 def reliability_analysis(
-    epi_fname, mask, sbref, plot=True, savecorr=True, hist=True, make_nifti=True
+    epi_fname, mask, sbref, plot=False, savecorr=True, hist=True, make_nifti=True
 ):
     # Define variables
     array_dict = {}
@@ -71,14 +71,15 @@ def reliability_analysis(
         print(" Data loaded and masked!")
         shape = array_dict[i].shape
         print(f"Mask: {mask} contains {shape[0]} voxels")
-
+    array_submask = ~np.all(array_dict[0]==0,axis=1)
     if len(array_dict) == 1:
-        # Single run, split in two
-        corr_dict[0] = np.corrcoef(array_dict[0][:, : (shape[-1] // 2)])
+        
+        # Singlhe run, split in two
+        corr_dict[0] = np.corrcoef(array_dict[0][array_submask, : (shape[-1] // 2)])
         print(
             f"Functional connectivity for computed (pearson correlation) with shape {corr_dict[0].shape}"
         )
-        corr_dict[1] = np.corrcoef(array_dict[0][:, (shape[-1] // 2) :])
+        corr_dict[1] = np.corrcoef(array_dict[0][array_submask, (shape[-1] // 2) :])
         print(
             f"Functional connectivity for computed (pearson correlation) with shape {corr_dict[1].shape}"
         )
@@ -115,7 +116,7 @@ def reliability_analysis(
         perm_volumes = list(combinations(range(len(array_dict)), 2))
         for i in list(range(len(epi_fname))):
             base_fname = epi_fname[i].split("_")[-1]
-            corr_dict[i] = np.corrcoef(array_dict[i])
+            corr_dict[i] = np.corrcoef(array_dict[i][array_submask,:])
             print(
                 f"Functional connectivity for computed (pearson correlation) with shape {corr_dict[i].shape}"
             )
@@ -146,7 +147,9 @@ def reliability_analysis(
         )
         print(f"Reliability calculated for epi combinaiton {1 + i}")
         if make_nifti:
-            plot_results = unmask(reliability_dict[i], mask)
+            niifti_vector = np.full([shape[0],],np.nan)
+            niifti_vector[array_submask] = reliability_dict[i]
+            plot_results = unmask(niifti_vector, mask)
             plot_results.to_filename(
                 epi_fname[perm_volumes[i][0]].replace(
                     epi_fname[perm_volumes[i][0]].split("_")[-1].split(".")[0],
@@ -185,7 +188,11 @@ def reliability_analysis(
                 )
 
         if plot:
-            plot_results = unmask(reliability_dict[i], mask)
+            if "plot_results" not in locals():
+                niifti_vector = np.full([shape[0],],np.zeros)
+                niifti_vector[array_submask] = reliability_dict[i]
+                plot_results = unmask(niifti_vector, mask)
+                
             shape_epi = plot_results.shape
             sbref_epi = load_img(sbref)
             print("Loaded sbref for background: {sbref}")
@@ -232,7 +239,7 @@ def reliability_analysis(
 ###############################################
 
 
-source_dir = "/scratch/mflores/Rest_HighRes/analysis_timeSeries"
+source_dir = "/bcbl/home/public/MarcoMotion/Rest_HighRes/analysis_timeSeries"
 methods = ["vanilla", "nordic", "tmmpca", "nordic", "hydra"]
 subjects = ["sub-001"]
 tasks = ["task-REST"]
@@ -243,10 +250,10 @@ for subject in subjects:
             for run in runs:
                 base_name = source_dir + "/" + subject + "_ses-1_" + task + run
                 mask = base_name + "_echo-1_part-mag_gm_mask-union.nii.gz"
-                sbref = ("/scratch/mflores/Resting_State/analysis/"
+                sbref = ("/bcbl/home/public/MarcoMotion/Rest_HighRes/analysis/"
                         + subject
                         + "_ses-1_"
-                        + task
+                        + task + "_run-1"
                         + "_echo-1_part-mag_masked_sbref.nii.gz"
                         )
                 # EPI, Split
