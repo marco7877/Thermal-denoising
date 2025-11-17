@@ -51,7 +51,7 @@ from scipy.stats import pearsonr
 ###### Functions ##############################
 ###############################################
 def reliability_analysis(
-    epi_fname, mask, sbref, plot=False, savecorr=True, hist=True, make_nifti=True
+    epi_fname, mask, sbref, plot=False, savecorr=False, hist=False, make_nifti=True
 ):
     # Define variables
     array_dict = {}
@@ -67,7 +67,7 @@ def reliability_analysis(
     ##############################
     for i in list(range(len(epi_fname))):
         print(f"Loading epi file: {epi_fname[i]} while applying mask: {mask}")
-        array_dict[i] = np.transpose(apply_mask(epi_fname[i], mask))
+        array_dict[i] = np.transpose(apply_mask(epi_fname[i], mask)).astype(np.float16)
         print(" Data loaded and masked!")
         shape = array_dict[i].shape
         print(f"Mask: {mask} contains {shape[0]} voxels")
@@ -75,11 +75,11 @@ def reliability_analysis(
     if len(array_dict) == 1:
         
         # Singlhe run, split in two
-        corr_dict[0] = np.corrcoef(array_dict[0][array_submask, : (shape[-1] // 2)])
+        corr_dict[0] = np.corrcoef(array_dict[0][array_submask, : (shape[-1] // 2)],dtype=np.float16)
         print(
             f"Functional connectivity for computed (pearson correlation) with shape {corr_dict[0].shape}"
         )
-        corr_dict[1] = np.corrcoef(array_dict[0][array_submask, (shape[-1] // 2) :])
+        corr_dict[1] = np.corrcoef(array_dict[0][array_submask, (shape[-1] // 2) :],dtype=np.float16)
         print(
             f"Functional connectivity for computed (pearson correlation) with shape {corr_dict[1].shape}"
         )
@@ -142,7 +142,7 @@ def reliability_analysis(
         reliability_dict[i] = pow(
             pearsonr(
                 corr_dict[perm_volumes[i][0]], corr_dict[perm_volumes[i][1]]
-            ).statistic,
+            ).statistic.astype(np.float16),
             2,
         )
         print(f"Reliability calculated for epi combinaiton {1 + i}")
@@ -239,21 +239,21 @@ def reliability_analysis(
 ###############################################
 
 
-source_dir = "/bcbl/home/public/MarcoMotion/Rest_HighRes/analysis_timeSeries"
+source_dir = "/scratch/mflores/Resting_State/analysis_timeSeries"
 methods = ["vanilla", "nordic", "tmmpca", "nordic", "hydra"]
 subjects = ["sub-001"]
-tasks = ["task-REST"]
-runs = ["_run-1", "_run-2"]
+tasks = ["task-HABLA1200", "task-HABLA1700"]
+runs = [""]
 for subject in subjects:
     for task in tasks:
         for method in methods:
             for run in runs:
                 base_name = source_dir + "/" + subject + "_ses-1_" + task + run
                 mask = base_name + "_echo-1_part-mag_gm_mask-union.nii.gz"
-                sbref = ("/bcbl/home/public/MarcoMotion/Rest_HighRes/analysis/"
+                sbref = ("/scratch/mflores/Rest_HighRes/analysis/"
                         + subject
                         + "_ses-1_"
-                        + task + "_run-1"
+                        + task # + "_run-1" 
                         + "_echo-1_part-mag_masked_sbref.nii.gz"
                         )
                 # EPI, Split
@@ -265,15 +265,15 @@ for subject in subjects:
                     print(f"ERROR: {subject}, task:{task}, and method:{method} one time series")
 
                 # EPI, Series
-                try:
-                    epi_series = [
-                            base_name + "_OC_part-mag_bold_" + method + "1.nii.gz",
-                            base_name + "_OC_part-mag_bold_" + method + "2.nii.gz",
-                            ]
-                    print("LOG: Attempting EPI, series reliability analysis")
-                    reliability_analysis(epi_series, mask, sbref)
-                except Exception:
-                    print(f"ERROR: {subject}, task:{task}, and method:{method} episeries")
+#                try:
+#                    epi_series = [
+#                            base_name + "_OC_part-mag_bold_" + method + "1.nii.gz",
+#                            base_name + "_OC_part-mag_bold_" + method + "2.nii.gz",
+                            #]
+#                    print("LOG: Attempting EPI, series reliability analysis")
+#                    reliability_analysis(epi_series, mask, sbref)
+#                except Exception:
+#                    print(f"ERROR: {subject}, task:{task}, and method:{method} episeries")
 
             # Residuals, from split
 #            try:
