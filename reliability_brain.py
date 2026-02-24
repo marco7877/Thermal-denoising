@@ -51,8 +51,8 @@ from scipy.stats import pearsonr
 ###### Functions ##############################
 ###############################################
 def reliability_analysis(
-    epi_fname, mask, sbref, plot=False, savecorr=False, hist=False, make_nifti=True
-):
+        epi_fname, mask, sbref, plot=False, savecorr=False, hist=False, make_nifti=True
+        ):
     # Define variables
     array_dict = {}
     corr_dict = {}
@@ -60,29 +60,29 @@ def reliability_analysis(
 
     print("Worth double checking! To understand output ")
     print(
-        f"Saving ... correlation matrixes: {savecorr}, r-values histogram: {hist}, plot: {plot}"
-    )
+            f"Saving ... correlation matrixes: {savecorr}, r-values histogram: {hist}, plot: {plot}"
+            )
     ##############################
     print("Loading timeseries")
     ##############################
     for i in list(range(len(epi_fname))):
         print(f"Loading epi file: {epi_fname[i]} while applying mask: {mask}")
-        array_dict[i] = np.transpose(apply_mask(epi_fname[i], mask)).astype(np.float16)
+        array_dict[i] = np.transpose(apply_mask(epi_fname[i], mask)).astype(np.float32)
         print(" Data loaded and masked!")
         shape = array_dict[i].shape
         print(f"Mask: {mask} contains {shape[0]} voxels")
     array_submask = ~np.all(array_dict[0]==0,axis=1)
     if len(array_dict) == 1:
-        
+
         # Singlhe run, split in two
-        corr_dict[0] = np.corrcoef(array_dict[0][array_submask, : (shape[-1] // 2)],dtype=np.float16)
+        corr_dict[0] = np.corrcoef(array_dict[0][array_submask, : (shape[-1] // 2)],dtype=np.float32)
         print(
-            f"Functional connectivity for computed (pearson correlation) with shape {corr_dict[0].shape}"
-        )
-        corr_dict[1] = np.corrcoef(array_dict[0][array_submask, (shape[-1] // 2) :],dtype=np.float16)
+                f"Functional connectivity for computed (pearson correlation) with shape {corr_dict[0].shape}"
+                )
+        corr_dict[1] = np.corrcoef(array_dict[0][array_submask, (shape[-1] // 2) :],dtype=np.float32)
         print(
-            f"Functional connectivity for computed (pearson correlation) with shape {corr_dict[1].shape}"
-        )
+                f"Functional connectivity for computed (pearson correlation) with shape {corr_dict[1].shape}"
+                )
         print(" Original epi time series divided in two")
         perm_volumes = list(combinations(range(len(corr_dict)), 2))
         epi_fname.append(epi_fname[0])
@@ -91,25 +91,25 @@ def reliability_analysis(
             base_fname = epi_fname[i].split("_")[-1]
             # TODO what is this?
             epi_fname[i].replace(
-                base_fname.split(".")[0],
-                base_fname.split(".")[0] + str(i),
-            )
+                    base_fname.split(".")[0],
+                    base_fname.split(".")[0] + str(i),
+                    )
             if savecorr:
                 # TODO perm_volumes is not defined before we hit this point?
                 np.savetxt(
-                    epi_fname[i].replace(
-                        base_fname,
-                        base_fname.split(".")[0]
-                        + str(perm_volumes[i][0])
-                        + str(perm_volumes[i][1])
-                        + "fconnectivity.csv",
-                    ),
-                    corr_dict[i],
-                    delimiter=",",
-                )
+                        epi_fname[i].replace(
+                            base_fname,
+                            base_fname.split(".")[0]
+                            + str(perm_volumes[i][0])
+                            + str(perm_volumes[i][1])
+                            + "fconnectivity.csv",
+                            ),
+                        corr_dict[i],
+                        delimiter=",",
+                        )
                 print(
-                    f"Functional connectivity for saved as {epi_fname[i].replace(epi_fname[i].split('_')[-1], epi_fname[i].split('_')[-1].split('.')[0] + 'fconnectivity.csv')}"
-                )
+                        f"Functional connectivity for saved as {epi_fname[i].replace(epi_fname[i].split('_')[-1], epi_fname[i].split('_')[-1].split('.')[0] + 'fconnectivity.csv')}"
+                        )
 
     elif len(array_dict) > 1:
         # Multiple runs, compute correlation for each
@@ -118,47 +118,43 @@ def reliability_analysis(
             base_fname = epi_fname[i].split("_")[-1]
             corr_dict[i] = np.corrcoef(array_dict[i][array_submask,:])
             print(
-                f"Functional connectivity for computed (pearson correlation) with shape {corr_dict[i].shape}"
-            )
+                    f"Functional connectivity for computed (pearson correlation) with shape {corr_dict[i].shape}"
+                    )
             # TODO should this be corr_dict[i]
             if savecorr:
                 np.savetxt(
-                    epi_fname[i].replace(
-                        base_fname,
-                        base_fname.split(".")[0]
-                        + str(perm_volumes[i][0])
-                        + str(perm_volumes[i][1])
-                        + "fconnectivity.csv",
-                    ),
-                    corr_dict[i],
-                    delimiter=",",
-                )
+                        epi_fname[i].replace(
+                            base_fname,
+                            base_fname.split(".")[0]
+                            + str(perm_volumes[i][0])
+                            + str(perm_volumes[i][1])
+                            + "fconnectivity.csv",
+                            ),
+                        corr_dict[i],
+                        delimiter=",",
+                        )
                 print(
-                    f"Functional connectivity for saved as {epi_fname[i].replace(epi_fname[i].split('_')[-1], epi_fname[i].split('_')[-1].split('.')[0] + 'fconnectivity.csv')}"
-                )
+                        f"Functional connectivity for saved as {epi_fname[i].replace(epi_fname[i].split('_')[-1], epi_fname[i].split('_')[-1].split('.')[0] + 'fconnectivity.csv')}"
+                        )
 
-    print(" Calculating reliability for combinations")
+                print(" Calculating reliability for combinations")
     for i in range(len(perm_volumes)):
         reliability_dict[i] = pow(
-            pearsonr(
-                corr_dict[perm_volumes[i][0]], corr_dict[perm_volumes[i][1]]
-            ).statistic.astype(np.float16),
-            2,
-        )
+                pearsonr(
+                    corr_dict[perm_volumes[i][0]], corr_dict[perm_volumes[i][1]]
+                    ).statistic.astype(np.float32),
+                2,
+                )
         print(f"Reliability calculated for epi combinaiton {1 + i}")
         if make_nifti:
-            niifti_vector = np.full([shape[0],],np.nan)
+            niifti_vector = np.zeros([shape[0],])
+            print("vector")
             niifti_vector[array_submask] = reliability_dict[i]
+            print("vector + data")
             plot_results = unmask(niifti_vector, mask)
-            plot_results.to_filename(
-                epi_fname[perm_volumes[i][0]].replace(
-                    epi_fname[perm_volumes[i][0]].split("_")[-1].split(".")[0],
-                    epi_fname[perm_volumes[i][0]].split("_")[-1].split(".")[0]
-                    + str(perm_volumes[i][0])
-                    + str(perm_volumes[i][1]),
-                )
-            )
-
+            print("vector unmasked to nilearn space")
+            plot_results.to_filename(epi_fname[perm_volumes[i][0]].replace(epi_fname[perm_volumes[i][0]].split("_")[-1].split(".")[0],epi_fname[perm_volumes[i][0]].split("_")[-1].split(".")[0]+ str(perm_volumes[i][0])+ str(perm_volumes[i][1]),))
+            print("saved")
         if hist:
             fig, ax = plt.subplots(nrows=1, ncols=1)
             ax.hist(reliability_dict[i], bins=100, density=True, edgecolor="black")
@@ -166,14 +162,14 @@ def reliability_analysis(
             plt.ylabel("Frequency")
             fig.suptitle("Reliability coefficients histogram")
             fig.savefig(
-                epi_fname[i].replace(
-                    epi_fname[perm_volumes[i][0]].split("_")[-1],
-                    epi_fname[perm_volumes[i][0]].split("_")[-1].split(".")[0]
-                    + str(perm_volumes[i][0])
-                    + str(perm_volumes[i][1])
-                    + "_histogram.png",
-                )
-            )
+                    epi_fname[i].replace(
+                        epi_fname[perm_volumes[i][0]].split("_")[-1],
+                        epi_fname[perm_volumes[i][0]].split("_")[-1].split(".")[0]
+                        + str(perm_volumes[i][0])
+                        + str(perm_volumes[i][1])
+                        + "_histogram.png",
+                        )
+                    )
             plt.close(fig)
             np.savetxt(
                     epi_fname[i].replace(
@@ -182,78 +178,77 @@ def reliability_analysis(
                         + str(perm_volumes[i][0])
                         + str(perm_volumes[i][1])
                         + "_reliability.csv",
-                    ),
+                        ),
                     reliability_dict[i],
                     delimiter=",",
-                )
-
-        if plot:
-            if "plot_results" not in locals():
-                niifti_vector = np.full([shape[0],],np.zeros)
-                niifti_vector[array_submask] = reliability_dict[i]
-                plot_results = unmask(niifti_vector, mask)
-                
-            shape_epi = plot_results.shape
-            sbref_epi = load_img(sbref)
-            print("Loaded sbref for background: {sbref}")
-            plot_results_affined = Nifti1Image(
-                plot_results.get_fdata(),
-                affine=sbref_epi.affine,
-                header=sbref_epi.header,
-            )
-            print("Created new nilearn object to visualize results")
+                    )
+            if plot:
+                if "plot_results" not in locals():
+                    niifti_vector = np.full([shape[0],],np.zeros)
+                    niifti_vector[array_submask] = reliability_dict[i]
+                    plot_results = unmask(niifti_vector, mask)
+                shape_epi = plot_results.shape
+                sbref_epi = load_img(sbref)
+                print("Loaded sbref for background: {sbref}")
+                plot_results_affined = Nifti1Image(
+                        plot_results.get_fdata(),
+                        affine=sbref_epi.affine,
+                        header=sbref_epi.header,
+                        )
+                print("Created new nilearn object to visualize results")
             title = (
-                "Reliability map for "
-                + epi_fname[perm_volumes[i][0]].split("_")[0].split("/")[-1]
-                + " "
-                + epi_fname[perm_volumes[i][0]].split("_")[-1].split(".")[0]
-            )
+                    "Reliability map for "
+                    + epi_fname[perm_volumes[i][0]].split("_")[0].split("/")[-1]
+                    + " "
+                    + epi_fname[perm_volumes[i][0]].split("_")[-1].split(".")[0]
+                    )
             brain_reliability = plot_stat_map(
-                plot_results_affined,
-                sbref_epi,
-                colorbar=True,
-                draw_cross=False,
-                title=title,
-                cut_coords=(
-                    (shape_epi[0] // 2),
-                    (shape_epi[1] // 2),
-                    (shape_epi[2] // 2),
-                ),
-                cmap="inferno",
-                vmin=0,
-                vmax=0.5,
-            )
+                    plot_results_affined,
+                    sbref_epi,
+                    colorbar=True,
+                    draw_cross=False,
+                    title=title,
+                    cut_coords=(
+                        (shape_epi[0] // 2),
+                        (shape_epi[1] // 2),
+                        (shape_epi[2] // 2),
+                        ),
+                    cmap="inferno",
+                    vmin=0,
+                    vmax=0.5,
+                    )
             brain_reliability.savefig(
-                epi_fname[perm_volumes[i][0]].replace(
-                    epi_fname[perm_volumes[i][0]].split("_")[-1],
-                    epi_fname[perm_volumes[i][0]].split("_")[-1].split(".")[0]
-                    + str(perm_volumes[i][0])
-                    + str(perm_volumes[i][1])
-                    + "_reliability.png",
-                )
-            )
+                    epi_fname[perm_volumes[i][0]].replace(
+                        epi_fname[perm_volumes[i][0]].split("_")[-1],
+                        epi_fname[perm_volumes[i][0]].split("_")[-1].split(".")[0]
+                        + str(perm_volumes[i][0])
+                        + str(perm_volumes[i][1])
+                        + "_reliability.png",
+                        )
+                    )
 
 
-#################
+            #################
 ###### Main      ##############################
 ###############################################
 
 
 source_dir = "/scratch/mflores/Resting_State/analysis_timeSeries"
-methods = ["vanilla", "nordic", "tmmpca", "nordic", "hydra"]
-subjects = ["sub-001"]
-tasks = ["task-HABLA1200", "task-HABLA1700"]
-runs = [""]
+methods = ["vanilla", "nordic", "tmppca","mppca", "nordic", "hydra"]
+subjects = ["sub-001","sub-002","sub-003","sub-004","sub-005"]
+tasks = ["task-HABLA1200","task-HABLA1700"]
+#runs = ["_run-1","_run-2"]
+runs=[""]
 for subject in subjects:
     for task in tasks:
         for method in methods:
             for run in runs:
-                base_name = source_dir + "/" + subject + "_ses-1_" + task + run
+                base_name = source_dir + "/" + subject + "_ses-1_" + task #+ run 
                 mask = base_name + "_echo-1_part-mag_gm_mask-union.nii.gz"
-                sbref = ("/scratch/mflores/Rest_HighRes/analysis/"
+                sbref = ("/scratch/mflores/Resting_State/analysis/"
                         + subject
                         + "_ses-1_"
-                        + task # + "_run-1" 
+                        + task  #+ "_run-1" 
                         + "_echo-1_part-mag_masked_sbref.nii.gz"
                         )
                 # EPI, Split
@@ -264,16 +259,16 @@ for subject in subjects:
                 except Exception:
                     print(f"ERROR: {subject}, task:{task}, and method:{method} one time series")
 
-                # EPI, Series
-#                try:
-#                    epi_series = [
-#                            base_name + "_OC_part-mag_bold_" + method + "1.nii.gz",
-#                            base_name + "_OC_part-mag_bold_" + method + "2.nii.gz",
-                            #]
-#                    print("LOG: Attempting EPI, series reliability analysis")
-#                    reliability_analysis(epi_series, mask, sbref)
-#                except Exception:
-#                    print(f"ERROR: {subject}, task:{task}, and method:{method} episeries")
+#                 EPI, Series
+                try:
+                    epi_series = [
+                            base_name + "_OC_part-mag_bold_" + method + "1.nii.gz",
+                            base_name + "_OC_part-mag_bold_" + method + "2.nii.gz"
+                            ]
+                    print("LOG: Attempting EPI, series reliability analysis")
+                    reliability_analysis(epi_series, mask, sbref)
+                except Exception:
+                    print(f"ERROR: {subject}, task:{task}, and method:{method} episeries")
 
             # Residuals, from split
 #            try:
