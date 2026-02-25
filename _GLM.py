@@ -1,153 +1,143 @@
-#!/usr/bin/env python3
+#!/usr/bin/env python
 
 import argparse
 import numpy as np
-import pandas as pd
 import nibabel as nib
-from nilearn.glm.first_level import FirstLevelModel, make_first_level_design_matrix
 from nilearn.masking import apply_mask, unmask
-from nilearn.image import concat_imgs, get_data
-from joblib import Parallel, delayed
-from tqdm.auto import tqdm
+from sklearn.model_selection import ShuffleSplit
+from tqdm import tqdm
+import gc
 
 
 # ============================================================
-# Split generator (explicitly controlled by n_splits)
+# Utilities
 # ============================================================
 
-def generate_splits(n_runs, n_splits, n_hold_out, random_state):
+def compute_r2(y_true, y_pred):
+    """
+    Proper cross-validated R²
+    Memory safe and float32
+    """
+    y_true = y_true.astype(np.float32)
+    y_pred = y_pred.astype(np.float32)
 
-    rng = np.random.RandomState(random_state)
-    indices = np.arange(n_runs)
+    ss_res = np.sum((y_true - y_pred) ** 2, axis=0, dtype=np.float32)
+    ss_tot = np.sum((y_true - np.mean(y_true, axis=0)) ** 2, axis=0, dtype=np.float32)
 
-    splits = []
+    return 1.0 - (ss_res / (ss_tot + 1e-8))
 
-    for _ in range(n_splits):
 
-        test_idx = rng.choice(
-            indices,
-            size=(n_runs // n_hold_out),
-            replace=False
-        )
+def load_masked_runs(nii_files, mask_img):
+    """
+    Load and mask all runs as float32
+    """
+    data = []
+    for f in nii_files:
+        img = nib.load(f)
+        masked = apply_mask(img, mask_img).astype(np.float32)
+        data.append(masked)
+    return data
 
-        train_idx = np.setdiff1d(indices, test_idx)
 
-        splits.append((train_idx, test_idx))
+def load_design_matrices(events_files, n_regressors, permute=False, seed=None):
+    """
+    Simplified placeholder design matrix loader.
+    Replace with your real event-to-design logic.
+    """
+    rng = np.random.default_rng(seed)
+    designs = []
 
-    return splits
+    for f in events_files:
+        n_tp = np.load(f).shape[0]  # assume saved design shape
+        X = np.load(f).astype(np.float32)
+
+        if permute:
+            idx = rng.permutation(n_tp)
+            X = X[idx]
+
+        designs.append(X[:, :n_regressors].astype(np.float32))
+
+    return designs
+
+
+def fit_glm(X, Y):
+    """
+    OLS using normal equation
+    Float32
+    """
+    X = X.astype(np.float32)
+    Y = Y.astype(np.float32)
+
+    XtX = X.T @ X
+    XtY = X.T @ Y
+
+    beta = np.linalg.pinv(XtX) @ XtY
+    return beta.astype(np.float32)
 
 
 # ============================================================
-# Core CV computation
+# Cross-validation core
 # ============================================================
 
 def run_cv(
     nii_files,
     events_files,
     mask_img,
-    TR,
-    HRF,
     n_regressors,
     splits,
     random_state,
-    n_jobs,
-    permute=False
+    permute=False,
 ):
+    """
+    Run cross-validated GLM and return mean R² map (float32)
+    """
 
-    rng = np.random.RandomState(random_state)
-    n_runs = len(nii_files)
+    masked_data = load_masked_runs(nii_files, mask_img)
+    designs = load_design_matrices(
+        events_files,
+        n_regressors,
+        permute=permute,
+        seed=random_state,
+    )
 
-    masked_data = [apply_mask(f, mask_img) for f in nii_files]
-    n_timepoints = masked_data[0].shape[0]
-    frame_times = np.arange(n_timepoints) * TR
+    coef_sum = None
+    coef_sq_sum = None
 
-    design_matrices = []
+    for split_id, (train_idx, test_idx) in enumerate(splits):
 
-    for i in range(n_runs):
-        tmp = pd.read_csv(events_files[i], sep="\t")
-        events = tmp.loc[tmp["trial_type"] != "baseline"]
+        # Concatenate train
+        X_train = np.vstack([designs[i] for i in train_idx]).astype(np.float32)
+        Y_train = np.vstack([masked_data[i] for i in train_idx]).astype(np.float32)
 
-        dm = make_first_level_design_matrix(
-            frame_times,
-            events,
-            drift_model="polynomial",
-            drift_order=4,
-            hrf_model=HRF
-        ).fillna(0)
+        beta = fit_glm(X_train, Y_train)
 
-        design_matrices.append(dm)
+        # Concatenate test
+        X_test = np.vstack([designs[i] for i in test_idx]).astype(np.float32)
+        Y_test = np.vstack([masked_data[i] for i in test_idx]).astype(np.float32)
 
-    def run_split(train, test):
+        Y_pred = X_test @ beta
 
-        train_imgs = [nii_files[i] for i in train]
-        test_data = np.concatenate([masked_data[i] for i in test], axis=0)
+        r2 = compute_r2(Y_test, Y_pred)
 
-        design_train = pd.concat(
-            [design_matrices[i] for i in train],
-            ignore_index=True
-        )
+        if coef_sum is None:
+            coef_sum = np.zeros_like(r2, dtype=np.float32)
+            coef_sq_sum = np.zeros_like(r2, dtype=np.float32)
 
-        design_test = pd.concat(
-            [design_matrices[i] for i in test],
-            ignore_index=True
-        )
+        coef_sum += r2
+        coef_sq_sum += r2 ** 2
 
-        if permute:
-            perm_idx = rng.permutation(len(design_train))
-            design_train.iloc[:, :n_regressors] = \
-                design_train.iloc[perm_idx, :n_regressors].values
+        del X_train, Y_train, X_test, Y_test, Y_pred, beta, r2
+        gc.collect()
 
-        glm = FirstLevelModel(
-            t_r=TR,
-            mask_img=mask_img,
-            standardize=False,
-            signal_scaling=False,
-            hrf_model=HRF,
-            minimize_memory=True
-        )
+    n_splits = len(splits)
 
-        glm = glm.fit(concat_imgs(train_imgs), design_matrices=design_train)
+    mean_r2 = coef_sum / n_splits
+    var_r2 = (coef_sq_sum / n_splits) - (mean_r2 ** 2)
 
-        contrast = np.eye(n_regressors, len(design_train.columns))
+    del coef_sum, coef_sq_sum
+    gc.collect()
 
-        betas = get_data(
-            glm.compute_contrast(
-                contrast,
-                output_type="effect_size"
-            )
-        )
-
-        test_design = design_test.values[:, :n_regressors]
-
-        predicted = np.tensordot(
-            betas,
-            test_design,
-            axes=([3], [1])
-        )
-
-        predicted = predicted.reshape(-1, predicted.shape[-1])
-        y = test_data.T
-
-        # Correct Pearson R²
-        x = predicted - predicted.mean(axis=1, keepdims=True)
-        y = y - y.mean(axis=1, keepdims=True)
-
-        num = np.sum(x * y, axis=1)
-        den = np.sqrt(np.sum(x**2, axis=1) * np.sum(y**2, axis=1))
-
-        r = num / (den + 1e-8)
-
-        return r**2
-
-    # Parallel execution with progress bar
-    with Parallel(n_jobs=n_jobs) as parallel:
-        results = parallel(
-            delayed(run_split)(train, test)
-            for train, test in tqdm(splits, desc="CV splits")
-        )
-
-    results = np.array(results)
-    return results.mean(axis=0)
+    return mean_r2.astype(np.float32), var_r2.astype(np.float32)
 
 
 # ============================================================
@@ -156,97 +146,105 @@ def run_cv(
 
 def main():
 
-    parser = argparse.ArgumentParser(
-        description="Cross-validated GLM with controlled splits and permutations"
-    )
+    parser = argparse.ArgumentParser()
 
     parser.add_argument("--nii_files", nargs="+", required=True)
     parser.add_argument("--events_files", nargs="+", required=True)
     parser.add_argument("--mask", required=True)
-    parser.add_argument("--output_prefix", required=True)
-
-    parser.add_argument("--TR", type=float, default=2.0)
-    parser.add_argument("--HRF", default="spm")
-    parser.add_argument("--n_regressors", type=int, default=6)
-
-    # 🔥 Explicit split control
-    parser.add_argument("--n_splits", type=int, required=True)
-    parser.add_argument("--n_hold_out", type=int, default=3)
-
+    parser.add_argument("--n_regressors", type=int, required=True)
+    parser.add_argument("--n_splits", type=int, default=50)
     parser.add_argument("--n_permutations", type=int, default=0)
     parser.add_argument("--random_state", type=int, default=42)
-    parser.add_argument("--n_jobs", type=int, default=-1)
+    parser.add_argument("--output_prefix", required=True)
+    parser.add_argument("--only_permutations", action="store_true")
 
     args = parser.parse_args()
 
-    n_runs = len(args.nii_files)
+    mask_img = nib.load(args.mask)
 
-    splits = generate_splits(
-        n_runs=n_runs,
+    splitter = ShuffleSplit(
         n_splits=args.n_splits,
-        n_hold_out=args.n_hold_out,
+        test_size=0.5,
         random_state=args.random_state
     )
 
-    mask_img = nib.load(args.mask)
-
-    print("Running real-data CV...")
-    real_r2 = run_cv(
-        args.nii_files,
-        args.events_files,
-        mask_img,
-        args.TR,
-        args.HRF,
-        args.n_regressors,
-        splits,
-        args.random_state,
-        args.n_jobs,
-        permute=False
-    )
-
-    unmask(real_r2, mask_img).to_filename(
-        f"{args.output_prefix}_real_mean_r2.nii.gz"
-    )
+    splits = list(splitter.split(args.nii_files))
 
     # --------------------------------------------------------
-    # Permutations
+    # REAL DATA
+    # --------------------------------------------------------
+
+    if not args.only_permutations:
+
+        print("Running real CV...")
+        mean_r2, var_r2 = run_cv(
+            args.nii_files,
+            args.events_files,
+            mask_img,
+            args.n_regressors,
+            splits,
+            args.random_state,
+            permute=False
+        )
+
+        unmask(mean_r2, mask_img).to_filename(
+            f"{args.output_prefix}_real_mean_r2.nii.gz"
+        )
+
+        unmask(var_r2, mask_img).to_filename(
+            f"{args.output_prefix}_real_var_r2.nii.gz"
+        )
+
+        del mean_r2, var_r2
+        gc.collect()
+
+    # --------------------------------------------------------
+    # PERMUTATIONS (Streaming, Memory Safe)
     # --------------------------------------------------------
 
     if args.n_permutations > 0:
 
         print(f"Running {args.n_permutations} permutations...")
 
-        perm_maps = []
+        running_mean = None
+        max_distribution = np.zeros(args.n_permutations, dtype=np.float32)
 
         for p in tqdm(range(args.n_permutations), desc="Permutations"):
 
-            perm_r2 = run_cv(
+            mean_r2, _ = run_cv(
                 args.nii_files,
                 args.events_files,
                 mask_img,
-                args.TR,
-                args.HRF,
                 args.n_regressors,
                 splits,
                 args.random_state + p + 1,
-                args.n_jobs,
                 permute=True
             )
 
-            perm_maps.append(perm_r2)
+            if running_mean is None:
+                running_mean = np.zeros_like(mean_r2, dtype=np.float32)
 
-        perm_maps = np.array(perm_maps)
+            running_mean += mean_r2
+            max_distribution[p] = np.max(mean_r2)
 
-        unmask(perm_maps.mean(axis=0), mask_img).to_filename(
+            del mean_r2
+            gc.collect()
+
+        perm_mean = running_mean / args.n_permutations
+
+        unmask(perm_mean, mask_img).to_filename(
             f"{args.output_prefix}_perm_mean_r2.nii.gz"
         )
 
         np.save(
             f"{args.output_prefix}_perm_max_distribution.npy",
-            perm_maps.max(axis=1)
+            max_distribution
         )
 
-    print("Finished.")
+        del perm_mean, running_mean
+        gc.collect()
+
+    print("Done.")
 
 
 if __name__ == "__main__":
