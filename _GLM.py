@@ -3,6 +3,7 @@
 import argparse
 import numpy as np
 import nibabel as nib
+import pandas as pd
 from nilearn.masking import apply_mask, unmask
 from sklearn.model_selection import ShuffleSplit
 from tqdm import tqdm
@@ -41,21 +42,30 @@ def load_masked_runs(nii_files, mask_img):
 
 def load_design_matrices(events_files, n_regressors, permute=False, seed=None):
     """
-    Simplified placeholder design matrix loader.
-    Replace with your real event-to-design logic.
+    Load design matrices from CSV files.
+    Each CSV should contain the design matrix for one run.
     """
     rng = np.random.default_rng(seed)
     designs = []
 
     for f in events_files:
-        n_tp = np.load(f).shape[0]  # assume saved design shape
-        X = np.load(f).astype(np.float32)
+        # Load CSV file
+        df = pd.read_csv(f)
+        
+        # Convert to numpy array and select first n_regressors columns
+        X = df.values.astype(np.float32)
+        
+        # If the CSV has more columns than needed, take only the first n_regressors
+        if X.shape[1] > n_regressors:
+            X = X[:, :n_regressors]
+        elif X.shape[1] < n_regressors:
+            raise ValueError(f"CSV {f} has {X.shape[1]} columns but {n_regressors} regressors requested")
 
         if permute:
-            idx = rng.permutation(n_tp)
+            idx = rng.permutation(X.shape[0])
             X = X[idx]
 
-        designs.append(X[:, :n_regressors].astype(np.float32))
+        designs.append(X)
 
     return designs
 
