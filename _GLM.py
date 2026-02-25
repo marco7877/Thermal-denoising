@@ -31,22 +31,29 @@ def compute_r2(y_true, y_pred):
 def load_masked_runs(nii_files, mask_img):
     """
     Load and mask all runs as float32
+    Also return the number of timepoints per run for later use
     """
     data = []
+    timepoints_per_run = []
+    
     for f in nii_files:
         img = nib.load(f)
         masked = apply_mask(img, mask_img).astype(np.float32)
         data.append(masked)
-    return data
+        timepoints_per_run.append(masked.shape[0])
+        
+    return data, timepoints_per_run
 
 
 def load_design_matrices(events_files, total_regressors, permute=False, seed=None):
     """
     Load design matrices from CSV files with apostrophe delimiters.
     Each CSV should contain the design matrix for one run.
+    Also return the number of timepoints per run
     """
     rng = np.random.default_rng(seed)
     designs = []
+    timepoints_per_run = []
 
     for f in events_files:
         # Load CSV file with apostrophe delimiter
@@ -70,8 +77,9 @@ def load_design_matrices(events_files, total_regressors, permute=False, seed=Non
             X = X[idx]
 
         designs.append(X)
+        timepoints_per_run.append(X.shape[0])
 
-    return designs
+    return designs, timepoints_per_run
 
 
 def fit_glm(X, Y):
@@ -98,8 +106,7 @@ def orthogonalize_regressors(X_task, X_nuisance):
     X_nuisance = X_nuisance.astype(np.float32)
     X_task = X_task.astype(np.float32)
     
-    # Compute projection matrix: H = X_nuisance @ pinv(X_nuisance.T @ X_nuisance) @ X_nuisance.T
-    # But we can do it more efficiently:
+    # Compute projection
     nuisance_params = np.linalg.pinv(X_nuisance.T @ X_nuisance) @ X_nuisance.T @ X_task
     X_task_predicted = X_nuisance @ nuisance_params
     
@@ -136,24 +143,35 @@ def run_cv(
     
     total_regressors = n_task_regressors + n_nuisance_regressors
     
-    # Load data
-    masked_data = load_masked_runs(nii_files, mask_img)
-    designs = load_design_matrices(
+    # Load data with timepoint information
+    masked_data, brain_timepoints = load_masked_runs(nii_files, mask_img)
+    designs, design_timepoints = load_design_matrices(
         events_files,
         total_regressors,
         permute=permute,
         seed=random_state,
     )
+    
+    # Verify that timepoints match between brain data and design matrices
+    for i, (bt, dt) in enumerate(zip(brain_timepoints, design_timepoints)):
+        if bt != dt:
+            raise ValueError(f"Run {i}: Brain data has {bt} timepoints but design matrix has {dt} timepoints")
 
     coef_sum = None
     coef_sq_sum = None
 
     for split_id, (train_idx, test_idx) in enumerate(splits):
         
+        print(f"  Processing split {split_id + 1}/{len(splits)}")
+        
         # --- TRAINING ---
+        # Get training data with their original run indices
+        train_designs = [designs[i] for i in train_idx]
+        train_data = [masked_data[i] for i in train_idx]
+        
         # Concatenate training data
-        X_train_full = np.vstack([designs[i] for i in train_idx]).astype(np.float32)
-        Y_train = np.vstack([masked_data[i] for i in train_idx]).astype(np.float32)
+        X_train_full = np.vstack(train_designs).astype(np.float32)
+        Y_train = np.vstack(train_data).astype(np.float32)
         
         # Split into task and nuisance regressors
         X_train_task = X_train_full[:, :n_task_regressors]
@@ -166,24 +184,60 @@ def run_cv(
         beta_task = fit_glm(X_train_task_orth, Y_train)
         
         # --- TESTING ---
-        # Concatenate test data
-        X_test_full = np.vstack([designs[i] for i in test_idx]).astype(np.float32)
-        Y_test = np.vstack([masked_data[i] for i in test_idx]).astype(np.float32)
+        # We need to handle test data carefully - we can't just concatenate all test runs
+        # because we need to orthogonalize each test run separately using training nuisance parameters
         
-        # Split test data
-        X_test_task = X_test_full[:, :n_task_regressors]
-        X_test_nuisance = X_test_full[:, n_task_regressors:]
+        # Initialize list to collect predictions for all test runs
+        all_y_test = []
+        all_y_pred = []
         
-        # Orthogonalize test task regressors using the same nuisance space (from training)
-        # This ensures we don't use test data to estimate nuisance parameters
-        nuisance_params = np.linalg.pinv(X_train_nuisance.T @ X_train_nuisance) @ X_train_nuisance.T @ X_test_task
-        X_test_task_predicted = X_test_nuisance @ nuisance_params
-        X_test_task_orth = X_test_task - X_test_task_predicted
+        # Process each test run separately
+        for test_run_idx in test_idx:
+            # Get this test run's data
+            X_test_full_run = designs[test_run_idx].astype(np.float32)
+            Y_test_run = masked_data[test_run_idx].astype(np.float32)
+            
+            # Split into task and nuisance regressors for this run
+            X_test_task_run = X_test_full_run[:, :n_task_regressors]
+            X_test_nuisance_run = X_test_full_run[:, n_task_regressors:]
+            
+            # Orthogonalize test task regressors using training nuisance parameters
+            # For this, we need to compute nuisance_params for each task regressor separately
+            # or do it in a way that handles the dimension mismatch
+            
+            # Method: For each task regressor, regress it on training nuisance space
+            # to get coefficients, then apply to test nuisance regressors
+            
+            # Initialize orthogonalized test task regressors
+            X_test_task_orth_run = np.zeros_like(X_test_task_run, dtype=np.float32)
+            
+            # For each task regressor column
+            for col in range(n_task_regressors):
+                # Get this column from training task regressors
+                train_task_col = X_train_task[:, col:col+1]
+                
+                # Regress this column on training nuisance space
+                # This gives us the relationship between this task regressor and nuisance regressors
+                nuisance_coefs = np.linalg.pinv(X_train_nuisance.T @ X_train_nuisance) @ X_train_nuisance.T @ train_task_col
+                
+                # Predict this task regressor from test nuisance regressors
+                task_pred_from_nuisance = X_test_nuisance_run @ nuisance_coefs
+                
+                # Subtract to get orthogonalized version
+                X_test_task_orth_run[:, col:col+1] = X_test_task_run[:, col:col+1] - task_pred_from_nuisance
+            
+            # Predict using task model
+            Y_pred_run = X_test_task_orth_run @ beta_task
+            
+            # Store results
+            all_y_test.append(Y_test_run)
+            all_y_pred.append(Y_pred_run)
         
-        # Predict using task model
-        Y_pred = X_test_task_orth @ beta_task
+        # Concatenate all test runs
+        Y_test = np.vstack(all_y_test)
+        Y_pred = np.vstack(all_y_pred)
         
-        # Compute R² - this now reflects variance explained by task regressors only
+        # Compute R²
         r2 = compute_r2(Y_test, Y_pred)
 
         # Accumulate for mean and variance
@@ -196,8 +250,8 @@ def run_cv(
 
         # Clean up
         del X_train_full, X_train_task, X_train_nuisance, X_train_task_orth
-        del X_test_full, X_test_task, X_test_nuisance, X_test_task_orth
-        del Y_train, Y_test, Y_pred, beta_task, r2, nuisance_params
+        del Y_train, Y_test, Y_pred, beta_task, r2
+        del all_y_test, all_y_pred
         gc.collect()
 
     n_splits = len(splits)
@@ -243,6 +297,10 @@ def main():
 
     args = parser.parse_args()
 
+    # Verify that number of input files match
+    if len(args.nii_files) != len(args.events_files):
+        raise ValueError(f"Number of NIfTI files ({len(args.nii_files)}) does not match number of event files ({len(args.events_files)})")
+
     # Load mask
     mask_img = nib.load(args.mask)
 
@@ -254,20 +312,21 @@ def main():
     )
     splits = list(splitter.split(args.nii_files))
     
-    print(f"\nCross-validation setup:")
+    print(f"\n{'='*60}")
+    print(f"Cross-validation setup:")
+    print(f"  Number of runs: {len(args.nii_files)}")
     print(f"  Number of splits: {args.n_splits}")
-    print(f"  Test size: {args.test_size*100:.0f}%")
-    print(f"  Train size: {(1-args.test_size)*100:.0f}%")
+    print(f"  Test size: {args.test_size*100:.0f}% ({int(args.test_size * len(args.nii_files))} runs)")
+    print(f"  Train size: {(1-args.test_size)*100:.0f}% ({len(args.nii_files) - int(args.test_size * len(args.nii_files))} runs)")
+    print(f"  Task regressors: {args.n_task_regressors}")
+    print(f"  Nuisance regressors: {args.n_nuisance_regressors}")
+    print(f"{'='*60}\n")
 
     # --------------------------------------------------------
     # REAL DATA
     # --------------------------------------------------------
     if not args.only_permutations:
-        print("\n" + "="*50)
         print("Running real data CV with nuisance regression...")
-        print(f"Task regressors: {args.n_task_regressors}")
-        print(f"Nuisance regressors: {args.n_nuisance_regressors}")
-        print("="*50)
         
         mean_r2, var_r2 = run_cv(
             args.nii_files,
@@ -299,7 +358,6 @@ def main():
     # --------------------------------------------------------
     if args.n_permutations > 0:
         print(f"\nRunning {args.n_permutations} permutations...")
-        print("="*50)
 
         running_mean = None
         max_distribution = np.zeros(args.n_permutations, dtype=np.float32)
@@ -312,7 +370,7 @@ def main():
                 args.n_task_regressors,
                 args.n_nuisance_regressors,
                 splits,
-                args.random_state + p + 1,  # Different seed for each permutation
+                args.random_state + p + 1,
                 permute=True
             )
 
