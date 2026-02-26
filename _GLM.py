@@ -5,6 +5,7 @@ import numpy as np
 import nibabel as nib
 import pandas as pd
 from nilearn.masking import apply_mask, unmask
+from nilearn.image import resample_to_img
 from sklearn.model_selection import ShuffleSplit
 from tqdm import tqdm
 import gc
@@ -28,20 +29,50 @@ def compute_r2(y_true, y_pred):
     return 1.0 - (ss_res / (ss_tot + 1e-8))
 
 
-def load_masked_runs(nii_files, mask_img):
+def load_masked_runs(nii_files, mask_img, tolerance=1e-4):
     """
-    Load and mask all runs as float32
+    Load and mask all runs as float32, resampling if needed
     Also return the number of timepoints per run for later use
+    
+    Parameters:
+    -----------
+    nii_files : list
+        List of NIfTI file paths
+    mask_img : nibabel image
+        Mask image
+    tolerance : float
+        Tolerance for affine comparison
+    
+    Returns:
+    --------
+    data : list
+        List of masked data arrays
+    timepoints_per_run : list
+        List of number of timepoints per run
     """
     data = []
     timepoints_per_run = []
+    mask_affine = mask_img.affine
     
-    for f in nii_files:
+    for i, f in enumerate(nii_files):
+        print(f"  Loading run {i+1}/{len(nii_files)}: {f}")
         img = nib.load(f)
+        
+        # Check if affine is different (with tolerance)
+        if not np.allclose(img.affine, mask_affine, rtol=tolerance, atol=tolerance):
+            print(f"    Affine mismatch detected. Resampling to match mask space...")
+            print(f"    Max difference: {np.max(np.abs(img.affine - mask_affine))}")
+            
+            # Resample image to mask space
+            img = resample_to_img(img, mask_img, interpolation='continuous')
+            print(f"    Resampling complete")
+        
+        # Apply mask
         masked = apply_mask(img, mask_img).astype(np.float32)
         data.append(masked)
         timepoints_per_run.append(masked.shape[0])
         
+    print(f"  Loaded {len(data)} runs with timepoints: {timepoints_per_run}")
     return data, timepoints_per_run
 
 
@@ -55,7 +86,9 @@ def load_design_matrices(events_files, total_regressors, permute=False, seed=Non
     designs = []
     timepoints_per_run = []
 
-    for f in events_files:
+    for i, f in enumerate(events_files):
+        print(f"  Loading design matrix {i+1}/{len(events_files)}: {f}")
+        
         # Load CSV file with apostrophe delimiter
         df = pd.read_csv(f, delimiter="'", quotechar=None, quoting=3, engine='python')
         
@@ -97,25 +130,6 @@ def fit_glm(X, Y):
     return beta.astype(np.float32)
 
 
-def orthogonalize_regressors(X_task, X_nuisance):
-    """
-    Orthogonalize task regressors with respect to nuisance regressors
-    Returns task regressors with nuisance variance removed
-    """
-    # Projection matrix for nuisance space
-    X_nuisance = X_nuisance.astype(np.float32)
-    X_task = X_task.astype(np.float32)
-    
-    # Compute projection
-    nuisance_params = np.linalg.pinv(X_nuisance.T @ X_nuisance) @ X_nuisance.T @ X_task
-    X_task_predicted = X_nuisance @ nuisance_params
-    
-    # Residuals are task regressors with nuisance variance removed
-    X_task_orth = X_task - X_task_predicted
-    
-    return X_task_orth.astype(np.float32)
-
-
 # ============================================================
 # Cross-validation core with nuisance regression
 # ============================================================
@@ -144,7 +158,10 @@ def run_cv(
     total_regressors = n_task_regressors + n_nuisance_regressors
     
     # Load data with timepoint information
+    print("\nLoading brain data...")
     masked_data, brain_timepoints = load_masked_runs(nii_files, mask_img)
+    
+    print("\nLoading design matrices...")
     designs, design_timepoints = load_design_matrices(
         events_files,
         total_regressors,
@@ -153,16 +170,21 @@ def run_cv(
     )
     
     # Verify that timepoints match between brain data and design matrices
+    print("\nVerifying timepoint compatibility...")
     for i, (bt, dt) in enumerate(zip(brain_timepoints, design_timepoints)):
         if bt != dt:
             raise ValueError(f"Run {i}: Brain data has {bt} timepoints but design matrix has {dt} timepoints")
+    
+    print(f"  All timepoints match: {brain_timepoints}")
 
     coef_sum = None
     coef_sq_sum = None
 
     for split_id, (train_idx, test_idx) in enumerate(splits):
         
-        print(f"  Processing split {split_id + 1}/{len(splits)}")
+        print(f"\n  Processing split {split_id + 1}/{len(splits)}")
+        print(f"    Training runs: {train_idx}")
+        print(f"    Testing runs: {test_idx}")
         
         # --- TRAINING ---
         # Get training data with their original run indices
@@ -177,21 +199,14 @@ def run_cv(
         X_train_task = X_train_full[:, :n_task_regressors]
         X_train_nuisance = X_train_full[:, n_task_regressors:]
         
-        # Orthogonalize task regressors with respect to nuisance in training set
-        X_train_task_orth = orthogonalize_regressors(X_train_task, X_train_nuisance)
-        
-        # Fit model using orthogonalized task regressors
-        beta_task = fit_glm(X_train_task_orth, Y_train)
+        # Fit model using task regressors (they already include nuisance effects)
+        beta_task = fit_glm(X_train_task, Y_train)
         
         # --- TESTING ---
-        # We need to handle test data carefully - we can't just concatenate all test runs
-        # because we need to orthogonalize each test run separately using training nuisance parameters
-        
-        # Initialize list to collect predictions for all test runs
+        # Process each test run separately
         all_y_test = []
         all_y_pred = []
         
-        # Process each test run separately
         for test_run_idx in test_idx:
             # Get this test run's data
             X_test_full_run = designs[test_run_idx].astype(np.float32)
@@ -201,14 +216,7 @@ def run_cv(
             X_test_task_run = X_test_full_run[:, :n_task_regressors]
             X_test_nuisance_run = X_test_full_run[:, n_task_regressors:]
             
-            # Orthogonalize test task regressors using training nuisance parameters
-            # For this, we need to compute nuisance_params for each task regressor separately
-            # or do it in a way that handles the dimension mismatch
-            
-            # Method: For each task regressor, regress it on training nuisance space
-            # to get coefficients, then apply to test nuisance regressors
-            
-            # Initialize orthogonalized test task regressors
+            # Method: For each task regressor, remove variance explained by nuisance
             X_test_task_orth_run = np.zeros_like(X_test_task_run, dtype=np.float32)
             
             # For each task regressor column
@@ -239,6 +247,7 @@ def run_cv(
         
         # Compute R²
         r2 = compute_r2(Y_test, Y_pred)
+        print(f"    Mean R² across voxels: {np.mean(r2):.6f}")
 
         # Accumulate for mean and variance
         if coef_sum is None:
@@ -249,7 +258,7 @@ def run_cv(
         coef_sq_sum += r2 ** 2
 
         # Clean up
-        del X_train_full, X_train_task, X_train_nuisance, X_train_task_orth
+        del X_train_full, X_train_task, X_train_nuisance
         del Y_train, Y_test, Y_pred, beta_task, r2
         del all_y_test, all_y_pred
         gc.collect()
@@ -301,8 +310,33 @@ def main():
     if len(args.nii_files) != len(args.events_files):
         raise ValueError(f"Number of NIfTI files ({len(args.nii_files)}) does not match number of event files ({len(args.events_files)})")
 
+    print(f"\n{'='*60}")
+    print(f"Cross-validated GLM with Nuisance Regression")
+    print(f"{'='*60}")
+    print(f"Input files:")
+    print(f"  NIfTI files: {len(args.nii_files)} runs")
+    for f in args.nii_files:
+        print(f"    {f}")
+    print(f"  Design files: {len(args.events_files)} runs")
+    for f in args.events_files:
+        print(f"    {f}")
+    print(f"  Mask: {args.mask}")
+    print(f"\nParameters:")
+    print(f"  Task regressors: {args.n_task_regressors}")
+    print(f"  Nuisance regressors: {args.n_nuisance_regressors}")
+    print(f"  Number of splits: {args.n_splits}")
+    print(f"  Test size: {args.test_size*100:.0f}%")
+    print(f"  Train size: {(1-args.test_size)*100:.0f}%")
+    print(f"  Permutations: {args.n_permutations}")
+    print(f"  Random seed: {args.random_state}")
+    print(f"  Output prefix: {args.output_prefix}")
+    print(f"{'='=}\n")
+
     # Load mask
+    print("Loading mask...")
     mask_img = nib.load(args.mask)
+    print(f"  Mask shape: {mask_img.shape}")
+    print(f"  Mask affine:\n{mask_img.affine}")
 
     # Create cross-validation splits with specified test_size
     splitter = ShuffleSplit(
@@ -312,21 +346,15 @@ def main():
     )
     splits = list(splitter.split(args.nii_files))
     
-    print(f"\n{'='*60}")
-    print(f"Cross-validation setup:")
-    print(f"  Number of runs: {len(args.nii_files)}")
-    print(f"  Number of splits: {args.n_splits}")
-    print(f"  Test size: {args.test_size*100:.0f}% ({int(args.test_size * len(args.nii_files))} runs)")
-    print(f"  Train size: {(1-args.test_size)*100:.0f}% ({len(args.nii_files) - int(args.test_size * len(args.nii_files))} runs)")
-    print(f"  Task regressors: {args.n_task_regressors}")
-    print(f"  Nuisance regressors: {args.n_nuisance_regressors}")
-    print(f"{'='*60}\n")
+    print(f"\nCross-validation splits created: {len(splits)}")
 
     # --------------------------------------------------------
     # REAL DATA
     # --------------------------------------------------------
     if not args.only_permutations:
-        print("Running real data CV with nuisance regression...")
+        print("\n" + "="*60)
+        print("RUNNING REAL DATA CV WITH NUISANCE REGRESSION")
+        print("="*60)
         
         mean_r2, var_r2 = run_cv(
             args.nii_files,
@@ -340,15 +368,18 @@ def main():
         )
 
         # Save results
-        unmask(mean_r2, mask_img).to_filename(
-            f"{args.output_prefix}_real_mean_r2.nii.gz"
-        )
-        print(f"Saved: {args.output_prefix}_real_mean_r2.nii.gz")
+        print("\nSaving results...")
+        
+        out_mean = f"{args.output_prefix}_real_mean_r2.nii.gz"
+        unmask(mean_r2, mask_img).to_filename(out_mean)
+        print(f"  Saved: {out_mean}")
+        print(f"    Mean R² across all voxels: {np.mean(mean_r2):.6f}")
+        print(f"    Max R²: {np.max(mean_r2):.6f}")
+        print(f"    Min R²: {np.min(mean_r2):.6f}")
 
-        unmask(var_r2, mask_img).to_filename(
-            f"{args.output_prefix}_real_var_r2.nii.gz"
-        )
-        print(f"Saved: {args.output_prefix}_real_var_r2.nii.gz")
+        out_var = f"{args.output_prefix}_real_var_r2.nii.gz"
+        unmask(var_r2, mask_img).to_filename(out_var)
+        print(f"  Saved: {out_var}")
 
         del mean_r2, var_r2
         gc.collect()
@@ -357,7 +388,9 @@ def main():
     # PERMUTATIONS
     # --------------------------------------------------------
     if args.n_permutations > 0:
-        print(f"\nRunning {args.n_permutations} permutations...")
+        print(f"\n{'='*60}")
+        print(f"RUNNING {args.n_permutations} PERMUTATIONS")
+        print(f"{'='*60}")
 
         running_mean = None
         max_distribution = np.zeros(args.n_permutations, dtype=np.float32)
@@ -384,29 +417,31 @@ def main():
             gc.collect()
 
         # Save permutation results
+        print("\nSaving permutation results...")
+        
         perm_mean = running_mean / args.n_permutations
-        unmask(perm_mean, mask_img).to_filename(
-            f"{args.output_prefix}_perm_mean_r2.nii.gz"
-        )
-        print(f"Saved: {args.output_prefix}_perm_mean_r2.nii.gz")
+        out_perm = f"{args.output_prefix}_perm_mean_r2.nii.gz"
+        unmask(perm_mean, mask_img).to_filename(out_perm)
+        print(f"  Saved: {out_perm}")
 
-        np.save(
-            f"{args.output_prefix}_perm_max_distribution.npy",
-            max_distribution
-        )
-        print(f"Saved: {args.output_prefix}_perm_max_distribution.npy")
+        out_dist = f"{args.output_prefix}_perm_max_distribution.npy"
+        np.save(out_dist, max_distribution)
+        print(f"  Saved: {out_dist}")
 
         # Calculate and print significance threshold
         threshold_95 = np.percentile(max_distribution, 95)
         threshold_99 = np.percentile(max_distribution, 99)
         print(f"\nPermutation-based significance thresholds:")
-        print(f"95th percentile: {threshold_95:.4f}")
-        print(f"99th percentile: {threshold_99:.4f}")
+        print(f"  95th percentile: {threshold_95:.6f}")
+        print(f"  99th percentile: {threshold_99:.6f}")
+        print(f"  Max value in permutations: {np.max(max_distribution):.6f}")
 
         del perm_mean, running_mean
         gc.collect()
 
-    print("\nDone!")
+    print(f"\n{'='*60}")
+    print("DONE!")
+    print(f"{'='=}\n")
 
 
 if __name__ == "__main__":
