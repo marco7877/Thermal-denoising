@@ -5,7 +5,7 @@ import numpy as np
 import nibabel as nib
 import pandas as pd
 from nilearn.masking import apply_mask, unmask
-from nilearn.image import resample_to_img, concat_imgs, get_data
+from nilearn.image import resample_to_img, concat_imgs, get_data, load_img
 from nilearn.glm.first_level import FirstLevelModel
 from sklearn.model_selection import ShuffleSplit
 from tqdm import tqdm
@@ -101,28 +101,63 @@ def compute_r2_from_correlation(y_true, y_pred, mask):
     return r2_full
 
 
-def load_masked_runs(nii_files, mask_img, tolerance=1e-4):
+def resample_to_reference(img, reference_img, interpolation='continuous'):
     """
-    Load and mask all runs as float32, resampling if needed
-    Returns list of masked data arrays
+    Resample image to match reference image's space
     """
-    data = []
-    mask_affine = mask_img.affine
+    if not np.allclose(img.affine, reference_img.affine, rtol=1e-3, atol=1e-3):
+        print(f"      Resampling to reference space...")
+        img = resample_to_img(img, reference_img, interpolation=interpolation)
+    return img
+
+
+def load_and_resample_runs(nii_files, reference_img=None, tolerance=1e-3):
+    """
+    Load all runs and resample them to a common reference space
+    If reference_img is None, use the first run as reference
+    Returns list of resampled images and the reference image
+    """
+    images = []
+    
+    # Load first image to use as reference if none provided
+    if reference_img is None:
+        reference_img = nib.load(nii_files[0])
+        print(f"  Using first run as reference: {nii_files[0]}")
     
     for i, f in enumerate(nii_files):
-        print(f"  Loading run {i+1}/{len(nii_files)}: {f}")
+        print(f"  Loading and resampling run {i+1}/{len(nii_files)}: {f}")
         img = nib.load(f)
         
-        # Check if affine is different (with tolerance)
-        if not np.allclose(img.affine, mask_affine, rtol=tolerance, atol=tolerance):
-            print(f"    Affine mismatch detected. Resampling to match mask space...")
-            img = resample_to_img(img, mask_img, interpolation='continuous')
+        # Resample to reference space
+        img_resampled = resample_to_reference(img, reference_img)
+        images.append(img_resampled)
         
+    return images, reference_img
+
+
+def load_masked_runs(nii_files, mask_img, reference_img=None, tolerance=1e-3):
+    """
+    Load and mask all runs, ensuring they're in the same space
+    Returns list of masked data arrays
+    """
+    # First, ensure all runs are in the same space
+    images, _ = load_and_resample_runs(nii_files, reference_img, tolerance)
+    
+    # Now apply mask to each resampled image
+    data = []
+    for i, img in enumerate(images):
+        # Check if mask needs resampling to match image space
+        if not np.allclose(img.affine, mask_img.affine, rtol=tolerance, atol=tolerance):
+            print(f"    Resampling mask to match run {i+1} space...")
+            mask_resampled = resample_to_img(mask_img, img, interpolation='nearest')
+        else:
+            mask_resampled = mask_img
+            
         # Apply mask
-        masked = apply_mask(img, mask_img).astype(np.float32)
+        masked = apply_mask(img, mask_resampled).astype(np.float32)
         data.append(masked)
         
-    return data
+    return data, images[0]  # Return reference image for later use
 
 
 def load_design_matrices(events_files, n_task_regressors, permute=False, seed=None):
@@ -177,9 +212,9 @@ def run_cv(
        c. Compute R² between nuisance-regressed test data and prediction
     """
     
-    # Load brain data
+    # Load brain data and get reference image
     print("\nLoading brain data...")
-    brain_data = load_masked_runs(nii_files, mask_img)
+    brain_data, reference_img = load_masked_runs(nii_files, mask_img)
     
     # Load design matrices
     print("\nLoading design matrices...")
@@ -208,9 +243,13 @@ def run_cv(
         train_files = [nii_files[i] for i in train_idx]
         train_designs = [designs[i] for i in train_idx]
         
-        # Concatenate training images in time
+        # Load and resample training images to reference space
+        print(f"      Loading and resampling training runs...")
+        train_imgs_list, _ = load_and_resample_runs(train_files, reference_img)
+        
+        # Concatenate training images
         print(f"      Concatenating training runs...")
-        train_imgs = concat_imgs(train_files)
+        train_imgs = concat_imgs(train_imgs_list)
         
         # Concatenate design matrices
         train_design_matrix = pd.concat(train_designs, ignore_index=True)
@@ -251,7 +290,7 @@ def run_cv(
         test_design_matrix = pd.concat(test_designs, ignore_index=True)
         test_design_matrix = test_design_matrix.fillna(0)
         
-        # Get actual test data
+        # Get actual test data (already loaded and masked)
         test_data_list = [brain_data[i] for i in test_idx]
         test_data = np.concatenate(test_data_list, axis=0).T  # Shape: (n_voxels, n_timepoints)
         
