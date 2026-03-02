@@ -52,7 +52,7 @@ def regress_out_nuisance(data, design_matrix, n_task_regressors):
         H_nuisance = nuisance_regressors @ XtX_inv @ nuisance_regressors.T
     
     # Apply projection to remove nuisance effects: (I - H_nuisance) @ data
-    data_resid = data - H_nuisance @ data
+    data_resid = data -  data @  H_nuisance
     
     return data_resid
 
@@ -225,8 +225,9 @@ def run_cv(
         seed=random_state,
     )
     
-    # Get mask data for later (for proper reshaping)
+    # Get mask data for later
     mask_data = mask_img.get_fdata().astype(bool)
+    n_voxels = np.sum(mask_data)  # Number of voxels in mask
     
     # Store results
     r2_sum = None
@@ -292,33 +293,46 @@ def run_cv(
         
         # Get actual test data (already loaded and masked)
         test_data_list = [brain_data[i] for i in test_idx]
-        test_data = np.concatenate(test_data_list, axis=0).T  # Shape: (n_voxels, n_timepoints)
+        # brain_data[i] is already masked and has shape (n_timepoints_i, n_voxels)
+        # We need to concatenate along time dimension
+        test_data = np.concatenate(test_data_list, axis=0)  # Shape: (n_timepoints_total, n_voxels)
+        test_data = test_data.T  # Transpose to (n_voxels, n_timepoints_total)
         
         # CRITICAL STEP: Regress out nuisance effects from test data
-        # Note: nuisance regressors already include constant term
         print(f"      Regressing out nuisance regressors from test data...")
         test_data_cleaned = regress_out_nuisance(
             test_data, 
             test_design_matrix, 
             n_task_regressors
-        )
+        )  # Shape: (n_voxels, n_timepoints)
         
         # Take only task regressors for prediction
-        test_task_regressors = test_design_matrix.values[:, :n_task_regressors].astype(np.float32)
+        test_task_regressors = test_design_matrix.values[:, :n_task_regressors].astype(np.float32)  # Shape: (n_timepoints, n_task)
         
-        # Predict using tensor product: betas (voxels × task) @ task_regressors (task × time)
+        # Predict using tensor product
         print(f"      Predicting test time series...")
         # Reshape betas to (n_voxels, n_task)
-        betas_reshaped = betas.reshape(-1, n_task_regressors)
+        betas_reshaped = betas.reshape(-1, n_task_regressors)[mask_data.ravel(), :]  # Only keep masked voxels
         
         # Predicted time series: (n_voxels, n_timepoints)
-        predicted = betas_reshaped @ test_task_regressors.T
+        predicted = betas_reshaped @ test_task_regressors.T  # Shape: (n_voxels, n_timepoints)
         
         # Compute R² between cleaned test data and prediction
         print(f"      Computing R²...")
+        
+        # Both test_data_cleaned and predicted are already in shape (n_voxels, n_timepoints)
+        # We need to reshape them back to 4D space for the R² computation
+        # Create empty 4D arrays
+        test_data_4d = np.zeros(mask_data.shape + (test_data_cleaned.shape[1],), dtype=np.float32)
+        predicted_4d = np.zeros(mask_data.shape + (predicted.shape[1],), dtype=np.float32)
+        
+        # Fill in the masked voxels
+        test_data_4d[mask_data, :] = test_data_cleaned
+        predicted_4d[mask_data, :] = predicted
+        
         r2_map = compute_r2_from_correlation(
-            test_data_cleaned.reshape(mask_data.shape + (-1,)),
-            predicted.reshape(mask_data.shape + (-1,)),
+            test_data_4d,
+            predicted_4d,
             mask_data
         )
         
