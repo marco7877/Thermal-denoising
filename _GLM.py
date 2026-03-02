@@ -17,6 +17,46 @@ import warnings
 # Utilities
 # ============================================================
 
+def regress_out_nuisance(data, design_matrix, n_task_regressors):
+    """
+    Regress out nuisance regressors from time series data
+    
+    Parameters:
+    -----------
+    data : np.ndarray
+        Time series data of shape (n_voxels, n_timepoints)
+    design_matrix : pd.DataFrame
+        Full design matrix (task + nuisance) - already includes constant
+    n_task_regressors : int
+        Number of task regressors (first columns)
+    
+    Returns:
+    --------
+    data_resid : np.ndarray
+        Data with nuisance effects removed
+    """
+    # Get nuisance regressors (all columns after task regressors)
+    # These already include constant term if present in original design
+    nuisance_regressors = design_matrix.values[:, n_task_regressors:].astype(np.float32)
+    
+    # Compute nuisance projection matrix
+    # H_nuisance = X_nuisance @ (X_nuisance.T @ X_nuisance)^{-1} @ X_nuisance.T
+    try:
+        # Using pseudo-inverse for numerical stability
+        pinv_nuisance = np.linalg.pinv(nuisance_regressors)
+        H_nuisance = nuisance_regressors @ pinv_nuisance
+    except np.linalg.LinAlgError:
+        # Fallback to regular inverse with regularization
+        XtX = nuisance_regressors.T @ nuisance_regressors
+        XtX_inv = np.linalg.inv(XtX + 1e-10 * np.eye(XtX.shape[0]))
+        H_nuisance = nuisance_regressors @ XtX_inv @ nuisance_regressors.T
+    
+    # Apply projection to remove nuisance effects: (I - H_nuisance) @ data
+    data_resid = data - H_nuisance @ data
+    
+    return data_resid
+
+
 def compute_r2_from_correlation(y_true, y_pred, mask):
     """
     Compute R² as squared Pearson correlation for masked voxels only
@@ -40,7 +80,7 @@ def compute_r2_from_correlation(y_true, y_pred, mask):
     y_true_centered = y_true_valid - np.mean(y_true_valid, axis=1, keepdims=True)
     y_pred_centered = y_pred_valid - np.mean(y_pred_valid, axis=1, keepdims=True)
     
-    # Compute Pearson correlation (following your working script)
+    # Compute Pearson correlation
     numerator = np.sum(y_true_centered * y_pred_centered, axis=1)
     denominator = np.sqrt(
         np.sum(y_true_centered**2, axis=1) * 
@@ -131,8 +171,10 @@ def run_cv(
     
     1. Training: Fit GLM on training runs using ALL regressors
     2. Extract task betas using contrast matrix
-    3. Testing: Predict using ONLY task regressors from test design matrix
-    4. Compute R² between predicted and actual test data
+    3. Testing: 
+       a. Regress out nuisance regressors from test time series
+       b. Predict using ONLY task regressors from test design matrix
+       c. Compute R² between nuisance-regressed test data and prediction
     """
     
     # Load brain data
@@ -209,6 +251,19 @@ def run_cv(
         test_design_matrix = pd.concat(test_designs, ignore_index=True)
         test_design_matrix = test_design_matrix.fillna(0)
         
+        # Get actual test data
+        test_data_list = [brain_data[i] for i in test_idx]
+        test_data = np.concatenate(test_data_list, axis=0).T  # Shape: (n_voxels, n_timepoints)
+        
+        # CRITICAL STEP: Regress out nuisance effects from test data
+        # Note: nuisance regressors already include constant term
+        print(f"      Regressing out nuisance regressors from test data...")
+        test_data_cleaned = regress_out_nuisance(
+            test_data, 
+            test_design_matrix, 
+            n_task_regressors
+        )
+        
         # Take only task regressors for prediction
         test_task_regressors = test_design_matrix.values[:, :n_task_regressors].astype(np.float32)
         
@@ -220,14 +275,10 @@ def run_cv(
         # Predicted time series: (n_voxels, n_timepoints)
         predicted = betas_reshaped @ test_task_regressors.T
         
-        # Get actual test data
-        test_data_list = [brain_data[i] for i in test_idx]
-        test_data = np.concatenate(test_data_list, axis=0).T  # Shape: (n_voxels, n_timepoints)
-        
-        # Compute R²
+        # Compute R² between cleaned test data and prediction
         print(f"      Computing R²...")
         r2_map = compute_r2_from_correlation(
-            test_data.reshape(mask_data.shape + (-1,)),
+            test_data_cleaned.reshape(mask_data.shape + (-1,)),
             predicted.reshape(mask_data.shape + (-1,)),
             mask_data
         )
@@ -244,7 +295,7 @@ def run_cv(
         r2_sq_sum += r2_map ** 2
 
         # Clean up
-        del fmri_glm, betas, betas_reshaped, predicted, test_data, r2_map
+        del fmri_glm, betas, betas_reshaped, predicted, test_data, test_data_cleaned, r2_map
         gc.collect()
 
     n_splits = len(splits)
