@@ -59,6 +59,50 @@ def convert_to_percent_change(data, mask_img):
     return data_pc
 
 
+def regress_out_nuisance(data, design_matrix, n_task_regressors):
+    """
+    Regress out nuisance regressors from test time series data
+    
+    Parameters:
+    -----------
+    data : np.ndarray
+        Time series data of shape (n_voxels, n_timepoints) - percent change
+    design_matrix : pd.DataFrame
+        Full design matrix (task + nuisance) for test runs
+    n_task_regressors : int
+        Number of task regressors (first columns)
+    
+    Returns:
+    --------
+    data_resid : np.ndarray
+        Data with nuisance effects removed, same shape as input
+    """
+    # Get nuisance regressors (all columns after task regressors)
+    nuisance_regressors = design_matrix.values[:, n_task_regressors:].astype(np.float32)
+    
+    # Add small regularization for numerical stability
+    try:
+        # Using pseudo-inverse
+        pinv_nuisance = np.linalg.pinv(nuisance_regressors)
+        # Projection matrix: H = X @ pinv(X)
+        H_nuisance = nuisance_regressors @ pinv_nuisance
+    except np.linalg.LinAlgError:
+        # Fallback to regular inverse with regularization
+        XtX = nuisance_regressors.T @ nuisance_regressors
+        XtX_reg = XtX + 1e-8 * np.eye(XtX.shape[0])
+        XtX_inv = np.linalg.inv(XtX_reg)
+        H_nuisance = nuisance_regressors @ XtX_inv @ nuisance_regressors.T
+    
+    # Apply projection to remove nuisance effects
+    # data shape: (n_voxels, n_timepoints)
+    # H_nuisance shape: (n_timepoints, n_timepoints)
+    # We want: data_cleaned = data - (data projected onto nuisance space)
+    # Which is: data_cleaned = data - data @ H_nuisance
+    data_resid = data - data @ H_nuisance
+    
+    return data_resid
+
+
 def load_and_preprocess_runs(nii_files, mask_img):
     """
     Load all runs and convert to percent change
@@ -170,6 +214,15 @@ def run_cv(
 ):
     """
     Run cross-validated GLM with percent change data
+    
+    The logic:
+    1. Training: Fit GLM on training runs using ALL regressors (task + nuisance)
+    2. Extract task betas using contrast matrix (one beta per task regressor per voxel)
+    3. Testing: 
+       a. Regress out nuisance effects from test time series using test design matrix
+       b. For each task, compute its contribution: beta_task * task_regressor_timecourse
+       c. Sum all task contributions to get predicted time series
+       d. Compute R² between cleaned test data and predicted time series
     """
     
     # Preprocess all runs to percent change
@@ -186,11 +239,13 @@ def run_cv(
     
     # Get mask data
     mask_data = mask_img.get_fdata().astype(bool)
-    print(f"\nMask has {np.sum(mask_data)} voxels")
+    mask_shape = mask_data.shape
+    n_voxels_mask = np.sum(mask_data)
+    print(f"\nMask has {n_voxels_mask} voxels")
     
-    # Store results
-    r2_sum = None
-    r2_sq_sum = None
+    # Store results as 3D arrays (same as mask shape)
+    r2_sum = np.zeros(mask_shape, dtype=np.float32)
+    r2_sq_sum = np.zeros(mask_shape, dtype=np.float32)
 
     for split_id, (train_idx, test_idx) in enumerate(splits):
         
@@ -213,7 +268,6 @@ def run_cv(
         train_design_matrix = pd.concat(train_designs, ignore_index=True)
         train_design_matrix = train_design_matrix.fillna(0)
         print(f"  Training design matrix shape: {train_design_matrix.shape}")
-        print(f"  Training regressors: {train_design_matrix.columns.tolist()}")
         
         # Create Nifti image for training data
         train_img = nib.Nifti1Image(train_data_concat, reference_img.affine)
@@ -242,65 +296,83 @@ def run_cv(
             contrast_matrix,
             output_type='effect_size'
         )
-        betas = get_data(betas_img).astype(np.float32)
+        betas = get_data(betas_img).astype(np.float32)  # Shape: (x, y, z, n_task)
         print(f"  Betas shape: {betas.shape}")
         
         # --- TESTING ---
         # Get test data
         test_data_list = [all_runs_data[i] for i in test_idx]
-        test_data = np.concatenate(test_data_list, axis=-1)
+        test_data = np.concatenate(test_data_list, axis=-1)  # Shape: (x, y, z, time)
         print(f"  Test data shape: {test_data.shape}")
         
-        # Get test design matrices and extract ONLY task regressors for prediction
+        # Get test design matrices
         test_designs = [designs[i] for i in test_idx]
+        test_design_matrix = pd.concat(test_designs, ignore_index=True)
+        test_design_matrix = test_design_matrix.fillna(0)
+        print(f"  Test design matrix shape: {test_design_matrix.shape}")
         
-        # For prediction, we only need the task regressors (first n_task_regressors columns)
-        test_task_regressors_list = []
-        for design in test_designs:
-            task_part = design.values[:, :n_task_regressors].astype(np.float32)
-            test_task_regressors_list.append(task_part)
-        
-        test_task_regressors = np.concatenate(test_task_regressors_list, axis=0)
-        print(f"  Test task regressors shape: {test_task_regressors.shape}")
-        
-        # Reshape betas to (n_voxels, n_task)
-        betas_reshaped = betas.reshape(-1, n_task_regressors)
-        
-        # Only use masked voxels
-        mask_flat = mask_data.ravel()
-        betas_masked = betas_reshaped[mask_flat, :]
-        print(f"  Betas masked shape: {betas_masked.shape}")
-        
-        # Predict test time series using only task regressors
-        print(f"  Predicting test time series...")
-        # predicted shape: (n_voxels_masked, n_timepoints)
-        predicted = betas_masked @ test_task_regressors.T
-        print(f"  Predicted shape: {predicted.shape}")
-        
-        # Reshape test data to voxels × time
+        # Reshape test data to (n_voxels, n_timepoints) for regression
         test_data_reshaped = test_data.reshape(-1, test_data.shape[-1])
-        test_data_masked = test_data_reshaped[mask_flat, :]
+        test_data_masked = test_data_reshaped[mask_data.ravel(), :]  # Shape: (n_voxels_mask, n_timepoints)
         print(f"  Test data masked shape: {test_data_masked.shape}")
         
+        # CRITICAL STEP 1: Regress out nuisance effects from test data
+        print(f"  Regressing out nuisance regressors from test data...")
+        test_data_cleaned = regress_out_nuisance(
+            test_data_masked,
+            test_design_matrix,
+            n_task_regressors
+        )  # Shape: (n_voxels_mask, n_timepoints)
+        print(f"  Cleaned test data shape: {test_data_cleaned.shape}")
+        
+        # CRITICAL STEP 2: Get task regressors for prediction
+        # Each task regressor is a timecourse of that task's occurrence (convolved with HRF)
+        test_task_regressors = test_design_matrix.values[:, :n_task_regressors].astype(np.float32)
+        print(f"  Test task regressors shape: {test_task_regressors.shape}")  # (n_timepoints, n_task)
+        
+        # CRITICAL STEP 3: Reshape betas to (n_voxels_mask, n_task)
+        betas_reshaped = betas.reshape(-1, n_task_regressors)
+        betas_masked = betas_reshaped[mask_data.ravel(), :]  # Shape: (n_voxels_mask, n_task)
+        print(f"  Betas masked shape: {betas_masked.shape}")
+        
+        # CRITICAL STEP 4: Predict by summing task contributions
+        # For each task: beta_voxel * task_regressor_timecourse
+        # Then sum across tasks
+        print(f"  Predicting test time series (sum of task contributions)...")
+        
+        # Initialize prediction array
+        predicted = np.zeros_like(test_data_cleaned)  # Shape: (n_voxels_mask, n_timepoints)
+        
+        # For each task, add its contribution
+        for task_idx in range(n_task_regressors):
+            task_beta = betas_masked[:, task_idx:task_idx+1]  # Shape: (n_voxels_mask, 1)
+            task_regressor = test_task_regressors[:, task_idx:task_idx+1].T  # Shape: (1, n_timepoints)
+            task_contribution = task_beta @ task_regressor  # Shape: (n_voxels_mask, n_timepoints)
+            predicted += task_contribution
+            print(f"    Task {task_idx+1}: contribution shape {task_contribution.shape}, "
+                  f"beta range [{np.min(task_beta):.4f}, {np.max(task_beta):.4f}]")
+        
+        print(f"  Final predicted shape: {predicted.shape}")
+        
         # Verify shapes match
-        if test_data_masked.shape != predicted.shape:
+        if test_data_cleaned.shape != predicted.shape:
             print(f"  WARNING: Shape mismatch!")
-            print(f"    Test data: {test_data_masked.shape}")
+            print(f"    Cleaned test data: {test_data_cleaned.shape}")
             print(f"    Predicted: {predicted.shape}")
             # Take minimum shape
-            min_voxels = min(test_data_masked.shape[0], predicted.shape[0])
-            min_time = min(test_data_masked.shape[1], predicted.shape[1])
-            test_data_masked = test_data_masked[:min_voxels, :min_time]
+            min_voxels = min(test_data_cleaned.shape[0], predicted.shape[0])
+            min_time = min(test_data_cleaned.shape[1], predicted.shape[1])
+            test_data_cleaned = test_data_cleaned[:min_voxels, :min_time]
             predicted = predicted[:min_voxels, :min_time]
         
-        # Compute R²
+        # Compute R² between cleaned test data and predicted time series
         print(f"  Computing R²...")
         
         # Reconstruct 4D for R² computation
-        test_data_4d = np.zeros(mask_data.shape + (test_data_masked.shape[1],), dtype=np.float32)
-        predicted_4d = np.zeros(mask_data.shape + (predicted.shape[1],), dtype=np.float32)
+        test_data_4d = np.zeros(mask_shape + (test_data_cleaned.shape[1],), dtype=np.float32)
+        predicted_4d = np.zeros(mask_shape + (predicted.shape[1],), dtype=np.float32)
         
-        test_data_4d[mask_data, :] = test_data_masked
+        test_data_4d[mask_data, :] = test_data_cleaned
         predicted_4d[mask_data, :] = predicted
         
         r2_map = compute_r2_from_correlation(test_data_4d, predicted_4d, mask_data)
@@ -315,27 +387,25 @@ def run_cv(
         print(f"    Min: {np.min(r2_values):.6f}")
         print(f"    Max: {np.max(r2_values):.6f}")
 
-        # Accumulate results
-        if r2_sum is None:
-            r2_sum = np.zeros_like(r2_map, dtype=np.float32)
-            r2_sq_sum = np.zeros_like(r2_map, dtype=np.float32)
-
+        # Accumulate results (r2_map is already 3D)
         r2_sum += r2_map
         r2_sq_sum += r2_map ** 2
 
         # Clean up
-        del fmri_glm, betas, betas_reshaped, betas_masked, predicted, test_data, r2_map
+        del fmri_glm, betas, betas_reshaped, betas_masked, predicted, test_data, test_data_cleaned, r2_map
         gc.collect()
 
     n_splits = len(splits)
-    mean_r2 = r2_sum / n_splits
+    mean_r2 = r2_sum / n_splits  # This is 3D: (x, y, z)
     var_r2 = (r2_sq_sum / n_splits) - (mean_r2 ** 2)
 
     print(f"\n{'='*60}")
     print(f"Final Results")
     print(f"{'='*60}")
-    print(f"Mean R² across all splits (within mask): {np.mean(mean_r2[mask_data]):.6f}")
-    print(f"Std R² across all splits: {np.std(mean_r2[mask_data]):.6f}")
+    final_mean = np.mean(mean_r2[mask_data])
+    final_std = np.std(mean_r2[mask_data])
+    print(f"Mean R² across all splits (within mask): {final_mean:.6f}")
+    print(f"Std R² across all splits: {final_std:.6f}")
     print(f"R² range: [{np.min(mean_r2[mask_data]):.6f}, {np.max(mean_r2[mask_data]):.6f}]")
 
     return mean_r2.astype(np.float32), var_r2.astype(np.float32)
@@ -421,15 +491,18 @@ def main():
             permute=False
         )
 
-        # Save results
+        # Save results - mean_r2 is 3D (x, y, z), which is exactly what unmask expects
         print("\nSaving results...")
         
         out_mean = f"{args.output_prefix}_real_mean_r2.nii.gz"
-        unmask(mean_r2, mask_img).to_filename(out_mean)
+        # mean_r2 is already 3D with same shape as mask
+        img_mean = nib.Nifti1Image(mean_r2, mask_img.affine)
+        img_mean.to_filename(out_mean)
         print(f"  Saved: {out_mean}")
 
         out_var = f"{args.output_prefix}_real_var_r2.nii.gz"
-        unmask(var_r2, mask_img).to_filename(out_var)
+        img_var = nib.Nifti1Image(var_r2, mask_img.affine)
+        img_var.to_filename(out_var)
         print(f"  Saved: {out_var}")
 
         del mean_r2, var_r2
@@ -470,7 +543,8 @@ def main():
         # Save permutation results
         perm_mean = running_mean / args.n_permutations
         out_perm = f"{args.output_prefix}_perm_mean_r2.nii.gz"
-        unmask(perm_mean, mask_img).to_filename(out_perm)
+        img_perm = nib.Nifti1Image(perm_mean, mask_img.affine)
+        img_perm.to_filename(out_perm)
         print(f"  Saved: {out_perm}")
 
         out_dist = f"{args.output_prefix}_perm_max_distribution.npy"
