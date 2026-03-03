@@ -5,7 +5,7 @@ import numpy as np
 import nibabel as nib
 import pandas as pd
 from nilearn.masking import apply_mask, unmask
-from nilearn.image import resample_to_img, concat_imgs, get_data, load_img, clean_img
+from nilearn.image import resample_to_img, concat_imgs, get_data, load_img, clean_img, new_img_like
 from nilearn.glm.first_level import FirstLevelModel
 from sklearn.model_selection import ShuffleSplit
 from tqdm import tqdm
@@ -16,71 +16,49 @@ import gc
 # Utilities
 # ============================================================
 
-def convert_to_percent_change_img(img, mask_img):
+def percent_change_img(img, mask_img):
     """
-    Convert an image to percent change: (x - mean)/mean * 100
+    Convert image to percent change: (x - mean)/mean * 100
     
-    This operates on the numpy array directly and returns a new image
+    This is a simpler implementation that doesn't rely on internal nilearn functions
     """
+    # Get data as numpy array
     data = get_data(img).astype(np.float32)
     mask_data = mask_img.get_fdata().astype(bool)
     
-    # Reshape to voxels × time
+    # Get original shape
     original_shape = data.shape
-    data_reshaped = data.reshape(-1, original_shape[-1])
     
-    # Only compute for masked voxels
+    # Reshape to voxels × time
+    n_voxels = np.prod(original_shape[:-1])
+    n_timepoints = original_shape[-1]
+    data_reshaped = data.reshape(n_voxels, n_timepoints)
     mask_flat = mask_data.ravel()
     
-    # Compute mean for each masked voxel (across time)
-    voxel_means = np.mean(data_reshaped[mask_flat, :], axis=1, keepdims=True)
+    # Only process masked voxels
+    masked_data = data_reshaped[mask_flat, :]
     
-    # Avoid division by zero
-    voxel_means = np.where(voxel_means == 0, 1, voxel_means)
+    if masked_data.size > 0:
+        # Compute mean for each masked voxel
+        voxel_means = np.mean(masked_data, axis=1, keepdims=True)
+        
+        # Avoid division by zero
+        voxel_means = np.where(voxel_means == 0, 1, voxel_means)
+        
+        # Convert to percent change
+        masked_pc = (masked_data - voxel_means) / voxel_means * 100
+        
+        # Put back into full array
+        data_pc_reshaped = np.zeros_like(data_reshaped)
+        data_pc_reshaped[mask_flat, :] = masked_pc
+    else:
+        data_pc_reshaped = data_reshaped
     
-    # Convert to percent change for masked voxels
-    data_pc_reshaped = np.zeros_like(data_reshaped)
-    data_pc_reshaped[mask_flat, :] = (data_reshaped[mask_flat, :] - voxel_means) / voxel_means * 100
-    
-    # Reshape back to 4D
+    # Reshape back to original 4D
     data_pc = data_pc_reshaped.reshape(original_shape)
     
-    # Return as nibabel image
-    return nib.Nifti1Image(data_pc, img.affine, img.header)
-
-
-def percent_change_img(img, mask_img):
-    """
-    Alternative using nilearn's built-in functionality
-    This might be more memory efficient
-    """
-    from nilearn._utils import check_niimg_4d
-    from nilearn._utils.glm import _ar_1_least_squares
-    
-    img = check_niimg_4d(img)
-    data = get_data(img)
-    mask_data = mask_img.get_fdata().astype(bool)
-    
-    # Reshape to voxels × time
-    original_shape = data.shape
-    data_reshaped = data.reshape(-1, original_shape[-1])
-    
-    # Compute mean for each voxel
-    mean_img = np.mean(data_reshaped, axis=-1)
-    
-    # Avoid division by zero
-    mean_img_safe = np.where(mean_img == 0, 1, mean_img)
-    
-    # Convert to percent change
-    data_pc_reshaped = (data_reshaped - mean_img[:, np.newaxis]) / mean_img_safe[:, np.newaxis] * 100
-    
-    # Mask out voxels outside mask
-    data_pc_reshaped[~mask_data.ravel(), :] = 0
-    
-    # Reshape back
-    data_pc = data_pc_reshaped.reshape(original_shape)
-    
-    return nib.Nifti1Image(data_pc, img.affine, img.header)
+    # Return as new image with same header/affine
+    return new_img_like(img, data_pc)
 
 
 def load_and_preprocess_runs(nii_files, mask_img):
@@ -111,6 +89,11 @@ def load_and_preprocess_runs(nii_files, mask_img):
         print(f"    Converting to percent change...")
         img_pc = percent_change_img(img, mask_img)
         all_runs_imgs.append(img_pc)
+        
+        # Quick check of the data range
+        data_sample = get_data(img_pc)[mask_img.get_fdata().astype(bool)]
+        if len(data_sample) > 0:
+            print(f"    Percent change range: [{np.min(data_sample):.2f}, {np.max(data_sample):.2f}]")
     
     return all_runs_imgs, reference_img
 
