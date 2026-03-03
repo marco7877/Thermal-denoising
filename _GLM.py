@@ -5,13 +5,11 @@ import numpy as np
 import nibabel as nib
 import pandas as pd
 from nilearn.masking import apply_mask, unmask
-from nilearn.image import resample_to_img, concat_imgs, get_data, load_img, clean_img
+from nilearn.image import resample_to_img, concat_imgs, get_data
 from nilearn.glm.first_level import FirstLevelModel
-from nilearn.glm.first_level import make_first_level_design_matrix
 from sklearn.model_selection import ShuffleSplit
 from tqdm import tqdm
 import gc
-import warnings
 
 
 # ============================================================
@@ -39,14 +37,21 @@ def convert_to_percent_change(data, mask_img):
     # Reshape to voxels × time
     data_reshaped = data.reshape(-1, data.shape[-1])
     
-    # Compute mean for each voxel (across time)
-    voxel_means = np.mean(data_reshaped, axis=1, keepdims=True)
+    # Only compute for masked voxels to save memory
+    masked_voxels = data_reshaped[mask_data.ravel(), :]
     
-    # Avoid division by zero for voxels outside mask or with zero mean
+    # Compute mean for each voxel (across time)
+    voxel_means = np.mean(masked_voxels, axis=1, keepdims=True)
+    
+    # Avoid division by zero
     voxel_means = np.where(voxel_means == 0, 1, voxel_means)
     
     # Convert to percent change
-    data_pc_reshaped = (data_reshaped - voxel_means) / voxel_means * 100
+    masked_pc = (masked_voxels - voxel_means) / voxel_means * 100
+    
+    # Put back into full array
+    data_pc_reshaped = np.zeros_like(data_reshaped)
+    data_pc_reshaped[mask_data.ravel(), :] = masked_pc
     
     # Reshape back to 4D
     data_pc = data_pc_reshaped.reshape(data.shape)
@@ -54,90 +59,64 @@ def convert_to_percent_change(data, mask_img):
     return data_pc
 
 
-def create_run_specific_design_matrix(events_file, frame_times, hrf_model, run_num):
+def load_and_preprocess_runs(nii_files, mask_img):
     """
-    Create a design matrix with run-specific column names for nuisance regressors
+    Load all runs and convert to percent change
+    Returns list of 4D arrays and the reference image
     """
-    # Load events
-    events = pd.read_csv(events_file, sep='\t', header=0)
+    print("\nLoading and converting to percent change...")
     
-    # Get only non-baseline trials
-    events = events.loc[events["trial_type"] != "baseline"]
+    all_runs_data = []
+    reference_img = None
     
-    # Create design matrix
-    design = make_first_level_design_matrix(
-        frame_times,
-        events,
-        drift_model="polynomial",
-        drift_order=4,
-        hrf_model=hrf_model
-    )
+    for i, f in enumerate(nii_files):
+        print(f"  Processing run {i+1}/{len(nii_files)}: {f}")
+        img = nib.load(f)
+        
+        # Use first run as reference
+        if reference_img is None:
+            reference_img = img
+            print(f"    Using as reference")
+        else:
+            # Check if affine matches reference
+            if not np.allclose(img.affine, reference_img.affine, rtol=1e-3, atol=1e-3):
+                print(f"    Resampling to match reference space...")
+                img = resample_to_img(img, reference_img, interpolation='continuous')
+        
+        # Get data and convert to percent change
+        data = img.get_fdata().astype(np.float32)
+        data_pc = convert_to_percent_change(data, mask_img)
+        all_runs_data.append(data_pc)
+        
+        print(f"    Shape: {data_pc.shape}")
     
-    # Rename columns to be run-specific
-    rename_dict = {}
-    for col in design.columns:
-        if col.startswith('drift_'):
-            rename_dict[col] = f"{col}_run{run_num}"
-        elif col == 'constant':
-            rename_dict[col] = f"constant_run{run_num}"
-    
-    design.rename(columns=rename_dict, inplace=True)
-    
-    return design
+    return all_runs_data, reference_img
 
 
-def regress_out_polynomials(data, frame_times, drift_order=4):
+def load_design_matrices(events_files, n_task_regressors, permute=False, seed=None):
     """
-    Regress out polynomial drift from time series data
-    This should be done per run before splitting
-    
-    Parameters:
-    -----------
-    data : np.ndarray
-        4D image data (x, y, z, time)
-    frame_times : np.ndarray
-        Time points for each volume
-    drift_order : int
-        Order of polynomial drift
-    
-    Returns:
-    --------
-    data_clean : np.ndarray
-        Data with polynomial drift removed
+    Load precomputed design matrices from CSV files
+    These already have run-specific drift terms
     """
-    # Create polynomial design matrix
-    from nilearn._utils.glm import _drift_names
-    from nilearn.glm.first_level import _infer_effect_masks
-    
-    # Create polynomial regressors
-    n_timepoints = data.shape[-1]
-    drift_names = _drift_names(drift_order)
-    polynomial = np.ones((n_timepoints, drift_order + 1))
-    
-    for i in range(1, drift_order + 1):
-        polynomial[:, i] = (frame_times ** i).T
-    
-    # Center and normalize polynomials (except constant)
-    polynomial[:, 1:] = polynomial[:, 1:] - polynomial[:, 1:].mean(axis=0)
-    
-    # Reshape data to voxels × time
-    original_shape = data.shape
-    data_reshaped = data.reshape(-1, n_timepoints)
-    
-    # Regress out polynomials using least squares
-    try:
-        pinv_poly = np.linalg.pinv(polynomial)
-        beta_poly = data_reshaped @ pinv_poly.T
-        predicted_poly = beta_poly @ polynomial.T
-        data_clean_reshaped = data_reshaped - predicted_poly
-    except:
-        # Fallback to simpler method
-        data_clean_reshaped = data_reshaped - np.mean(data_reshaped, axis=1, keepdims=True)
-    
-    # Reshape back
-    data_clean = data_clean_reshaped.reshape(original_shape)
-    
-    return data_clean
+    rng = np.random.default_rng(seed)
+    designs = []
+
+    for i, f in enumerate(events_files):
+        print(f"  Loading design matrix {i+1}/{len(events_files)}: {f}")
+        
+        # Load CSV file with apostrophe delimiter
+        df = pd.read_csv(f, delimiter="'", quotechar=None, quoting=3, engine='python')
+        
+        # Remove any empty columns
+        df = df.loc[:, ~df.columns.str.contains('^Unnamed')]
+        
+        if permute:
+            # Permute the rows (timepoints) for null distribution
+            df = df.sample(frac=1, random_state=rng).reset_index(drop=True)
+
+        designs.append(df)
+
+    return designs
 
 
 def compute_r2_from_correlation(y_true, y_pred, mask):
@@ -175,7 +154,7 @@ def compute_r2_from_correlation(y_true, y_pred, mask):
 
 
 # ============================================================
-# Main CV function
+# Cross-validation core
 # ============================================================
 
 def run_cv(
@@ -190,62 +169,24 @@ def run_cv(
     permute=False,
 ):
     """
-    Run cross-validated GLM following the working approach:
-    
-    1. Convert all data to percent change
-    2. Create run-specific design matrices (with unique polynomial names per run)
-    3. For each split:
-       - Train GLM on training runs using full design matrix
-       - Extract task betas
-       - Test: Use test task regressors to predict
-       - Compute R² between predicted and actual test data
+    Run cross-validated GLM with percent change data
     """
     
-    print("\n" + "="*60)
-    print("Preprocessing data...")
-    print("="*60)
+    # Preprocess all runs to percent change
+    all_runs_data, reference_img = load_and_preprocess_runs(nii_files, mask_img)
     
-    # Load mask
+    # Load design matrices (already have run-specific drifts)
+    print("\nLoading design matrices...")
+    designs = load_design_matrices(
+        events_files,
+        n_task_regressors,
+        permute=permute,
+        seed=random_state,
+    )
+    
+    # Get mask data
     mask_data = mask_img.get_fdata().astype(bool)
-    
-    # Load all runs as 4D images
-    print("Loading and converting to percent change...")
-    all_runs_data = []
-    frame_times = None
-    
-    for i, f in enumerate(nii_files):
-        print(f"  Processing run {i+1}/{len(nii_files)}: {f}")
-        img = nib.load(f)
-        
-        # Get data
-        data = img.get_fdata().astype(np.float32)
-        
-        # Create frame times if not exists
-        if frame_times is None:
-            n_timepoints = data.shape[-1]
-            frame_times = np.arange(n_timepoints) * tr
-        
-        # Convert to percent change
-        data_pc = convert_to_percent_change(data, mask_img)
-        all_runs_data.append(data_pc)
-    
-    # Create design matrices with run-specific polynomial names
-    print("\nCreating run-specific design matrices...")
-    designs = []
-    for i, f in enumerate(events_files):
-        print(f"  Creating design matrix {i+1}/{len(events_files)}: {f}")
-        design = create_run_specific_design_matrix(
-            f, 
-            frame_times, 
-            hrf_model, 
-            i+1  # run number
-        )
-        
-        if permute:
-            # Permute rows for null distribution
-            design = design.sample(frac=1, random_state=random_state).reset_index(drop=True)
-        
-        designs.append(design)
+    print(f"\nMask has {np.sum(mask_data)} voxels")
     
     # Store results
     r2_sum = None
@@ -272,9 +213,10 @@ def run_cv(
         train_design_matrix = pd.concat(train_designs, ignore_index=True)
         train_design_matrix = train_design_matrix.fillna(0)
         print(f"  Training design matrix shape: {train_design_matrix.shape}")
+        print(f"  Training regressors: {train_design_matrix.columns.tolist()}")
         
         # Create Nifti image for training data
-        train_img = nib.Nifti1Image(train_data_concat, mask_img.affine)
+        train_img = nib.Nifti1Image(train_data_concat, reference_img.affine)
         
         # Fit GLM
         print(f"  Fitting GLM on training data...")
@@ -289,7 +231,7 @@ def run_cv(
         
         fmri_glm = fmri_glm.fit(train_img, design_matrices=train_design_matrix)
         
-        # Extract task betas
+        # Extract task betas (first n_task_regressors)
         all_regressors = train_design_matrix.columns.tolist()
         contrast_matrix = np.zeros((n_task_regressors, len(all_regressors)))
         for i in range(n_task_regressors):
@@ -306,14 +248,13 @@ def run_cv(
         # --- TESTING ---
         # Get test data
         test_data_list = [all_runs_data[i] for i in test_idx]
+        test_data = np.concatenate(test_data_list, axis=-1)
+        print(f"  Test data shape: {test_data.shape}")
         
-        # IMPORTANT: For testing, we use the raw test data (already in percent change)
-        # No need to regress out polynomials again as they're handled by the prediction
-        
-        # Get test design matrices (only task regressors for prediction)
+        # Get test design matrices and extract ONLY task regressors for prediction
         test_designs = [designs[i] for i in test_idx]
         
-        # For prediction, we only need the task regressors
+        # For prediction, we only need the task regressors (first n_task_regressors columns)
         test_task_regressors_list = []
         for design in test_designs:
             task_part = design.values[:, :n_task_regressors].astype(np.float32)
@@ -330,14 +271,11 @@ def run_cv(
         betas_masked = betas_reshaped[mask_flat, :]
         print(f"  Betas masked shape: {betas_masked.shape}")
         
-        # Predict test time series
+        # Predict test time series using only task regressors
         print(f"  Predicting test time series...")
+        # predicted shape: (n_voxels_masked, n_timepoints)
         predicted = betas_masked @ test_task_regressors.T
         print(f"  Predicted shape: {predicted.shape}")
-        
-        # Get actual test data
-        test_data = np.concatenate(test_data_list, axis=-1)
-        print(f"  Test data shape: {test_data.shape}")
         
         # Reshape test data to voxels × time
         test_data_reshaped = test_data.reshape(-1, test_data.shape[-1])
@@ -408,16 +346,16 @@ def run_cv(
 # ============================================================
 
 def main():
-    parser = argparse.ArgumentParser(description="Cross-validated GLM with percent change and run-specific polynomials")
+    parser = argparse.ArgumentParser(description="Cross-validated GLM with percent change data")
     
     parser.add_argument("--nii_files", nargs="+", required=True,
                         help="List of NIfTI files (one per run)")
     parser.add_argument("--events_files", nargs="+", required=True,
-                        help="List of event TSV files (one per run)")
+                        help="List of design matrix CSV files (one per run)")
     parser.add_argument("--mask", required=True,
                         help="Mask NIfTI file")
     parser.add_argument("--n_task_regressors", type=int, required=True,
-                        help="Number of task-related regressors")
+                        help="Number of task-related regressors (first columns in design matrix)")
     parser.add_argument("--tr", type=float, default=2.0,
                         help="Repetition time in seconds")
     parser.add_argument("--hrf_model", type=str, default="spm",
@@ -441,7 +379,7 @@ def main():
         raise ValueError(f"Number of NIfTI files ({len(args.nii_files)}) does not match number of event files ({len(args.events_files)})")
 
     print(f"\n{'='*60}")
-    print(f"Cross-validated GLM with Percent Change and Run-Specific Polynomials")
+    print(f"Cross-validated GLM with Percent Change Data")
     print(f"{'='*60}")
     print(f"Input files: {len(args.nii_files)} runs")
     print(f"Parameters:")
