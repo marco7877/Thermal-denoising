@@ -5,8 +5,9 @@ import numpy as np
 import nibabel as nib
 import pandas as pd
 from nilearn.masking import apply_mask, unmask
-from nilearn.image import resample_to_img, concat_imgs, get_data, load_img
+from nilearn.image import resample_to_img, concat_imgs, get_data, load_img, clean_img
 from nilearn.glm.first_level import FirstLevelModel
+from nilearn.glm.first_level import make_first_level_design_matrix
 from sklearn.model_selection import ShuffleSplit
 from tqdm import tqdm
 import gc
@@ -17,62 +18,137 @@ import warnings
 # Utilities
 # ============================================================
 
-def regress_out_nuisance(data, design_matrix, n_task_regressors):
+def convert_to_percent_change(data, mask_img):
     """
-    Regress out nuisance regressors from time series data
+    Convert time series to percent change: (x - mean)/mean * 100
     
     Parameters:
     -----------
     data : np.ndarray
-        Time series data of shape (n_voxels, n_timepoints)
-    design_matrix : pd.DataFrame
-        Full design matrix (task + nuisance) - already includes constant
-    n_task_regressors : int
-        Number of task regressors (first columns)
+        4D image data (x, y, z, time)
+    mask_img : nibabel image
+        Binary mask
     
     Returns:
     --------
-    data_resid : np.ndarray
-        Data with nuisance effects removed
+    data_pc : np.ndarray
+        Percent change data
     """
-    # Get nuisance regressors (all columns after task regressors)
-    # These already include constant term if present in original design
-    nuisance_regressors = design_matrix.values[:, n_task_regressors:].astype(np.float32)
+    mask_data = mask_img.get_fdata().astype(bool)
     
-    # Compute nuisance projection matrix
-    # H_nuisance = X_nuisance @ (X_nuisance.T @ X_nuisance)^{-1} @ X_nuisance.T
+    # Reshape to voxels × time
+    data_reshaped = data.reshape(-1, data.shape[-1])
+    
+    # Compute mean for each voxel (across time)
+    voxel_means = np.mean(data_reshaped, axis=1, keepdims=True)
+    
+    # Avoid division by zero for voxels outside mask or with zero mean
+    voxel_means = np.where(voxel_means == 0, 1, voxel_means)
+    
+    # Convert to percent change
+    data_pc_reshaped = (data_reshaped - voxel_means) / voxel_means * 100
+    
+    # Reshape back to 4D
+    data_pc = data_pc_reshaped.reshape(data.shape)
+    
+    return data_pc
+
+
+def create_run_specific_design_matrix(events_file, frame_times, hrf_model, run_num):
+    """
+    Create a design matrix with run-specific column names for nuisance regressors
+    """
+    # Load events
+    events = pd.read_csv(events_file, sep='\t', header=0)
+    
+    # Get only non-baseline trials
+    events = events.loc[events["trial_type"] != "baseline"]
+    
+    # Create design matrix
+    design = make_first_level_design_matrix(
+        frame_times,
+        events,
+        drift_model="polynomial",
+        drift_order=4,
+        hrf_model=hrf_model
+    )
+    
+    # Rename columns to be run-specific
+    rename_dict = {}
+    for col in design.columns:
+        if col.startswith('drift_'):
+            rename_dict[col] = f"{col}_run{run_num}"
+        elif col == 'constant':
+            rename_dict[col] = f"constant_run{run_num}"
+    
+    design.rename(columns=rename_dict, inplace=True)
+    
+    return design
+
+
+def regress_out_polynomials(data, frame_times, drift_order=4):
+    """
+    Regress out polynomial drift from time series data
+    This should be done per run before splitting
+    
+    Parameters:
+    -----------
+    data : np.ndarray
+        4D image data (x, y, z, time)
+    frame_times : np.ndarray
+        Time points for each volume
+    drift_order : int
+        Order of polynomial drift
+    
+    Returns:
+    --------
+    data_clean : np.ndarray
+        Data with polynomial drift removed
+    """
+    # Create polynomial design matrix
+    from nilearn._utils.glm import _drift_names
+    from nilearn.glm.first_level import _infer_effect_masks
+    
+    # Create polynomial regressors
+    n_timepoints = data.shape[-1]
+    drift_names = _drift_names(drift_order)
+    polynomial = np.ones((n_timepoints, drift_order + 1))
+    
+    for i in range(1, drift_order + 1):
+        polynomial[:, i] = (frame_times ** i).T
+    
+    # Center and normalize polynomials (except constant)
+    polynomial[:, 1:] = polynomial[:, 1:] - polynomial[:, 1:].mean(axis=0)
+    
+    # Reshape data to voxels × time
+    original_shape = data.shape
+    data_reshaped = data.reshape(-1, n_timepoints)
+    
+    # Regress out polynomials using least squares
     try:
-        # Using pseudo-inverse for numerical stability
-        pinv_nuisance = np.linalg.pinv(nuisance_regressors)
-        H_nuisance = nuisance_regressors @ pinv_nuisance
-    except np.linalg.LinAlgError:
-        # Fallback to regular inverse with regularization
-        XtX = nuisance_regressors.T @ nuisance_regressors
-        XtX_inv = np.linalg.inv(XtX + 1e-10 * np.eye(XtX.shape[0]))
-        H_nuisance = nuisance_regressors @ XtX_inv @ nuisance_regressors.T
+        pinv_poly = np.linalg.pinv(polynomial)
+        beta_poly = data_reshaped @ pinv_poly.T
+        predicted_poly = beta_poly @ polynomial.T
+        data_clean_reshaped = data_reshaped - predicted_poly
+    except:
+        # Fallback to simpler method
+        data_clean_reshaped = data_reshaped - np.mean(data_reshaped, axis=1, keepdims=True)
     
-    # Apply projection to remove nuisance effects: (I - H_nuisance) @ data
-    data_resid = data -  data @  H_nuisance
+    # Reshape back
+    data_clean = data_clean_reshaped.reshape(original_shape)
     
-    return data_resid
+    return data_clean
 
 
 def compute_r2_from_correlation(y_true, y_pred, mask):
     """
     Compute R² as squared Pearson correlation for masked voxels only
-    Follows the formula from your working script:
-    
-    r = sum((x - mx)(y - my)) / sqrt(sum((x-mx)^2) * sum((y-my)^2))
-    R² = r²
     """
-    # Mask out zero voxels (assuming mask is binary)
     valid_voxels = mask.ravel() != 0
     
-    # Reshape to voxels × time
     y_true_reshaped = y_true.reshape(-1, y_true.shape[-1])
     y_pred_reshaped = y_pred.reshape(-1, y_pred.shape[-1])
     
-    # Only use valid voxels
     y_true_valid = y_true_reshaped[valid_voxels, :]
     y_pred_valid = y_pred_reshaped[valid_voxels, :]
     
@@ -87,107 +163,19 @@ def compute_r2_from_correlation(y_true, y_pred, mask):
         np.sum(y_pred_centered**2, axis=1)
     )
     
-    # Avoid division by zero
     epsilon = 1e-8
     correlation = numerator / (denominator + epsilon)
     
-    # R² is squared correlation
     r2_values = correlation ** 2
     
-    # Create full array with original shape
     r2_full = np.zeros(y_true.shape[:-1], dtype=np.float32)
     r2_full[valid_voxels.reshape(y_true.shape[:-1])] = r2_values
     
     return r2_full
 
 
-def resample_to_reference(img, reference_img, interpolation='continuous'):
-    """
-    Resample image to match reference image's space
-    """
-    if not np.allclose(img.affine, reference_img.affine, rtol=1e-3, atol=1e-3):
-        print(f"      Resampling to reference space...")
-        img = resample_to_img(img, reference_img, interpolation=interpolation)
-    return img
-
-
-def load_and_resample_runs(nii_files, reference_img=None, tolerance=1e-3):
-    """
-    Load all runs and resample them to a common reference space
-    If reference_img is None, use the first run as reference
-    Returns list of resampled images and the reference image
-    """
-    images = []
-    
-    # Load first image to use as reference if none provided
-    if reference_img is None:
-        reference_img = nib.load(nii_files[0])
-        print(f"  Using first run as reference: {nii_files[0]}")
-    
-    for i, f in enumerate(nii_files):
-        print(f"  Loading and resampling run {i+1}/{len(nii_files)}: {f}")
-        img = nib.load(f)
-        
-        # Resample to reference space
-        img_resampled = resample_to_reference(img, reference_img)
-        images.append(img_resampled)
-        
-    return images, reference_img
-
-
-def load_masked_runs(nii_files, mask_img, reference_img=None, tolerance=1e-3):
-    """
-    Load and mask all runs, ensuring they're in the same space
-    Returns list of masked data arrays
-    """
-    # First, ensure all runs are in the same space
-    images, _ = load_and_resample_runs(nii_files, reference_img, tolerance)
-    
-    # Now apply mask to each resampled image
-    data = []
-    for i, img in enumerate(images):
-        # Check if mask needs resampling to match image space
-        if not np.allclose(img.affine, mask_img.affine, rtol=tolerance, atol=tolerance):
-            print(f"    Resampling mask to match run {i+1} space...")
-            mask_resampled = resample_to_img(mask_img, img, interpolation='nearest')
-        else:
-            mask_resampled = mask_img
-            
-        # Apply mask
-        masked = apply_mask(img, mask_resampled).astype(np.float32)
-        data.append(masked)
-        
-    return data, images[0]  # Return reference image for later use
-
-
-def load_design_matrices(events_files, n_task_regressors, permute=False, seed=None):
-    """
-    Load design matrices from CSV files
-    Each CSV should contain the full design matrix (task + nuisance)
-    """
-    rng = np.random.default_rng(seed)
-    designs = []
-
-    for i, f in enumerate(events_files):
-        print(f"  Loading design matrix {i+1}/{len(events_files)}: {f}")
-        
-        # Load CSV file with apostrophe delimiter
-        df = pd.read_csv(f, delimiter="'", quotechar=None, quoting=3, engine='python')
-        
-        # Remove any empty columns
-        df = df.loc[:, ~df.columns.str.contains('^Unnamed')]
-        
-        if permute:
-            # Permute the rows (timepoints) of the design matrix
-            df = df.sample(frac=1, random_state=rng).reset_index(drop=True)
-
-        designs.append(df)
-
-    return designs
-
-
 # ============================================================
-# Cross-validation core
+# Main CV function
 # ============================================================
 
 def run_cv(
@@ -202,32 +190,62 @@ def run_cv(
     permute=False,
 ):
     """
-    Run cross-validated GLM following your working approach:
+    Run cross-validated GLM following the working approach:
     
-    1. Training: Fit GLM on training runs using ALL regressors
-    2. Extract task betas using contrast matrix
-    3. Testing: 
-       a. Regress out nuisance regressors from test time series
-       b. Predict using ONLY task regressors from test design matrix
-       c. Compute R² between nuisance-regressed test data and prediction
+    1. Convert all data to percent change
+    2. Create run-specific design matrices (with unique polynomial names per run)
+    3. For each split:
+       - Train GLM on training runs using full design matrix
+       - Extract task betas
+       - Test: Use test task regressors to predict
+       - Compute R² between predicted and actual test data
     """
     
-    # Load brain data and get reference image
-    print("\nLoading brain data...")
-    brain_data, reference_img = load_masked_runs(nii_files, mask_img)
+    print("\n" + "="*60)
+    print("Preprocessing data...")
+    print("="*60)
     
-    # Load design matrices
-    print("\nLoading design matrices...")
-    designs = load_design_matrices(
-        events_files,
-        n_task_regressors,
-        permute=permute,
-        seed=random_state,
-    )
-    
-    # Get mask data for later
+    # Load mask
     mask_data = mask_img.get_fdata().astype(bool)
-    n_voxels = np.sum(mask_data)  # Number of voxels in mask
+    
+    # Load all runs as 4D images
+    print("Loading and converting to percent change...")
+    all_runs_data = []
+    frame_times = None
+    
+    for i, f in enumerate(nii_files):
+        print(f"  Processing run {i+1}/{len(nii_files)}: {f}")
+        img = nib.load(f)
+        
+        # Get data
+        data = img.get_fdata().astype(np.float32)
+        
+        # Create frame times if not exists
+        if frame_times is None:
+            n_timepoints = data.shape[-1]
+            frame_times = np.arange(n_timepoints) * tr
+        
+        # Convert to percent change
+        data_pc = convert_to_percent_change(data, mask_img)
+        all_runs_data.append(data_pc)
+    
+    # Create design matrices with run-specific polynomial names
+    print("\nCreating run-specific design matrices...")
+    designs = []
+    for i, f in enumerate(events_files):
+        print(f"  Creating design matrix {i+1}/{len(events_files)}: {f}")
+        design = create_run_specific_design_matrix(
+            f, 
+            frame_times, 
+            hrf_model, 
+            i+1  # run number
+        )
+        
+        if permute:
+            # Permute rows for null distribution
+            design = design.sample(frac=1, random_state=random_state).reset_index(drop=True)
+        
+        designs.append(design)
     
     # Store results
     r2_sum = None
@@ -235,109 +253,129 @@ def run_cv(
 
     for split_id, (train_idx, test_idx) in enumerate(splits):
         
-        print(f"\n  Processing split {split_id + 1}/{len(splits)}")
-        print(f"    Training runs: {train_idx}")
-        print(f"    Testing runs: {test_idx}")
+        print(f"\n{'='*60}")
+        print(f"Processing split {split_id + 1}/{len(splits)}")
+        print(f"{'='*60}")
+        print(f"  Training runs: {train_idx}")
+        print(f"  Testing runs: {test_idx}")
         
         # --- TRAINING ---
-        # Get training files and design matrices
-        train_files = [nii_files[i] for i in train_idx]
+        # Get training data and design matrices
+        train_data = [all_runs_data[i] for i in train_idx]
         train_designs = [designs[i] for i in train_idx]
         
-        # Load and resample training images to reference space
-        print(f"      Loading and resampling training runs...")
-        train_imgs_list, _ = load_and_resample_runs(train_files, reference_img)
-        
-        # Concatenate training images
-        print(f"      Concatenating training runs...")
-        train_imgs = concat_imgs(train_imgs_list)
+        # Concatenate training data along time dimension
+        train_data_concat = np.concatenate(train_data, axis=-1)
+        print(f"  Training data shape: {train_data_concat.shape}")
         
         # Concatenate design matrices
         train_design_matrix = pd.concat(train_designs, ignore_index=True)
-        train_design_matrix = train_design_matrix.fillna(0)  # Replace NaN with 0
+        train_design_matrix = train_design_matrix.fillna(0)
+        print(f"  Training design matrix shape: {train_design_matrix.shape}")
         
-        # Fit GLM on training data
-        print(f"      Fitting GLM on training data...")
+        # Create Nifti image for training data
+        train_img = nib.Nifti1Image(train_data_concat, mask_img.affine)
+        
+        # Fit GLM
+        print(f"  Fitting GLM on training data...")
         fmri_glm = FirstLevelModel(
             t_r=tr,
             mask_img=mask_img,
             standardize=False,
             signal_scaling=False,
             hrf_model=hrf_model,
-            minimize_memory=True  # Set to True for memory efficiency
+            minimize_memory=True
         )
         
-        fmri_glm = fmri_glm.fit(train_imgs, design_matrices=train_design_matrix)
+        fmri_glm = fmri_glm.fit(train_img, design_matrices=train_design_matrix)
         
-        # Create contrast matrix to extract task betas
+        # Extract task betas
         all_regressors = train_design_matrix.columns.tolist()
-        
-        # Create contrast matrix: one contrast per task regressor
         contrast_matrix = np.zeros((n_task_regressors, len(all_regressors)))
         for i in range(n_task_regressors):
             contrast_matrix[i, i] = 1
         
-        # Extract task betas (effect sizes)
-        print(f"      Extracting task betas...")
+        print(f"  Extracting task betas...")
         betas_img = fmri_glm.compute_contrast(
             contrast_matrix,
             output_type='effect_size'
         )
-        betas = get_data(betas_img).astype(np.float32)  # Shape: (x, y, z, n_task)
+        betas = get_data(betas_img).astype(np.float32)
+        print(f"  Betas shape: {betas.shape}")
         
         # --- TESTING ---
-        # Get test design matrices and concatenate
+        # Get test data
+        test_data_list = [all_runs_data[i] for i in test_idx]
+        
+        # IMPORTANT: For testing, we use the raw test data (already in percent change)
+        # No need to regress out polynomials again as they're handled by the prediction
+        
+        # Get test design matrices (only task regressors for prediction)
         test_designs = [designs[i] for i in test_idx]
-        test_design_matrix = pd.concat(test_designs, ignore_index=True)
-        test_design_matrix = test_design_matrix.fillna(0)
         
-        # Get actual test data (already loaded and masked)
-        test_data_list = [brain_data[i] for i in test_idx]
-        # brain_data[i] is already masked and has shape (n_timepoints_i, n_voxels)
-        # We need to concatenate along time dimension
-        test_data = np.concatenate(test_data_list, axis=0)  # Shape: (n_timepoints_total, n_voxels)
-        test_data = test_data.T  # Transpose to (n_voxels, n_timepoints_total)
+        # For prediction, we only need the task regressors
+        test_task_regressors_list = []
+        for design in test_designs:
+            task_part = design.values[:, :n_task_regressors].astype(np.float32)
+            test_task_regressors_list.append(task_part)
         
-        # CRITICAL STEP: Regress out nuisance effects from test data
-        print(f"      Regressing out nuisance regressors from test data...")
-        test_data_cleaned = regress_out_nuisance(
-            test_data, 
-            test_design_matrix, 
-            n_task_regressors
-        )  # Shape: (n_voxels, n_timepoints)
+        test_task_regressors = np.concatenate(test_task_regressors_list, axis=0)
+        print(f"  Test task regressors shape: {test_task_regressors.shape}")
         
-        # Take only task regressors for prediction
-        test_task_regressors = test_design_matrix.values[:, :n_task_regressors].astype(np.float32)  # Shape: (n_timepoints, n_task)
-        
-        # Predict using tensor product
-        print(f"      Predicting test time series...")
         # Reshape betas to (n_voxels, n_task)
-        betas_reshaped = betas.reshape(-1, n_task_regressors)[mask_data.ravel(), :]  # Only keep masked voxels
+        betas_reshaped = betas.reshape(-1, n_task_regressors)
         
-        # Predicted time series: (n_voxels, n_timepoints)
-        predicted = betas_reshaped @ test_task_regressors.T  # Shape: (n_voxels, n_timepoints)
+        # Only use masked voxels
+        mask_flat = mask_data.ravel()
+        betas_masked = betas_reshaped[mask_flat, :]
+        print(f"  Betas masked shape: {betas_masked.shape}")
         
-        # Compute R² between cleaned test data and prediction
-        print(f"      Computing R²...")
+        # Predict test time series
+        print(f"  Predicting test time series...")
+        predicted = betas_masked @ test_task_regressors.T
+        print(f"  Predicted shape: {predicted.shape}")
         
-        # Both test_data_cleaned and predicted are already in shape (n_voxels, n_timepoints)
-        # We need to reshape them back to 4D space for the R² computation
-        # Create empty 4D arrays
-        test_data_4d = np.zeros(mask_data.shape + (test_data_cleaned.shape[1],), dtype=np.float32)
+        # Get actual test data
+        test_data = np.concatenate(test_data_list, axis=-1)
+        print(f"  Test data shape: {test_data.shape}")
+        
+        # Reshape test data to voxels × time
+        test_data_reshaped = test_data.reshape(-1, test_data.shape[-1])
+        test_data_masked = test_data_reshaped[mask_flat, :]
+        print(f"  Test data masked shape: {test_data_masked.shape}")
+        
+        # Verify shapes match
+        if test_data_masked.shape != predicted.shape:
+            print(f"  WARNING: Shape mismatch!")
+            print(f"    Test data: {test_data_masked.shape}")
+            print(f"    Predicted: {predicted.shape}")
+            # Take minimum shape
+            min_voxels = min(test_data_masked.shape[0], predicted.shape[0])
+            min_time = min(test_data_masked.shape[1], predicted.shape[1])
+            test_data_masked = test_data_masked[:min_voxels, :min_time]
+            predicted = predicted[:min_voxels, :min_time]
+        
+        # Compute R²
+        print(f"  Computing R²...")
+        
+        # Reconstruct 4D for R² computation
+        test_data_4d = np.zeros(mask_data.shape + (test_data_masked.shape[1],), dtype=np.float32)
         predicted_4d = np.zeros(mask_data.shape + (predicted.shape[1],), dtype=np.float32)
         
-        # Fill in the masked voxels
-        test_data_4d[mask_data, :] = test_data_cleaned
+        test_data_4d[mask_data, :] = test_data_masked
         predicted_4d[mask_data, :] = predicted
         
-        r2_map = compute_r2_from_correlation(
-            test_data_4d,
-            predicted_4d,
-            mask_data
-        )
+        r2_map = compute_r2_from_correlation(test_data_4d, predicted_4d, mask_data)
         
-        mean_r2 = np.mean(r2_map[mask_data])
-        print(f"      Mean R² (within mask): {mean_r2:.6f}")
+        # Calculate statistics
+        r2_values = r2_map[mask_data]
+        mean_r2 = np.mean(r2_values)
+        std_r2 = np.std(r2_values)
+        print(f"  R² statistics (within mask):")
+        print(f"    Mean: {mean_r2:.6f}")
+        print(f"    Std: {std_r2:.6f}")
+        print(f"    Min: {np.min(r2_values):.6f}")
+        print(f"    Max: {np.max(r2_values):.6f}")
 
         # Accumulate results
         if r2_sum is None:
@@ -348,14 +386,19 @@ def run_cv(
         r2_sq_sum += r2_map ** 2
 
         # Clean up
-        del fmri_glm, betas, betas_reshaped, predicted, test_data, test_data_cleaned, r2_map
+        del fmri_glm, betas, betas_reshaped, betas_masked, predicted, test_data, r2_map
         gc.collect()
 
     n_splits = len(splits)
     mean_r2 = r2_sum / n_splits
     var_r2 = (r2_sq_sum / n_splits) - (mean_r2 ** 2)
 
-    print(f"\n  Final mean R² across all splits (within mask): {np.mean(mean_r2[mask_data]):.6f}")
+    print(f"\n{'='*60}")
+    print(f"Final Results")
+    print(f"{'='*60}")
+    print(f"Mean R² across all splits (within mask): {np.mean(mean_r2[mask_data]):.6f}")
+    print(f"Std R² across all splits: {np.std(mean_r2[mask_data]):.6f}")
+    print(f"R² range: [{np.min(mean_r2[mask_data]):.6f}, {np.max(mean_r2[mask_data]):.6f}]")
 
     return mean_r2.astype(np.float32), var_r2.astype(np.float32)
 
@@ -365,21 +408,20 @@ def run_cv(
 # ============================================================
 
 def main():
-
-    parser = argparse.ArgumentParser(description="Cross-validated GLM following working approach")
+    parser = argparse.ArgumentParser(description="Cross-validated GLM with percent change and run-specific polynomials")
     
     parser.add_argument("--nii_files", nargs="+", required=True,
                         help="List of NIfTI files (one per run)")
     parser.add_argument("--events_files", nargs="+", required=True,
-                        help="List of design matrix CSV files (one per run)")
+                        help="List of event TSV files (one per run)")
     parser.add_argument("--mask", required=True,
                         help="Mask NIfTI file")
     parser.add_argument("--n_task_regressors", type=int, required=True,
-                        help="Number of task-related regressors (first columns in design matrix)")
+                        help="Number of task-related regressors")
     parser.add_argument("--tr", type=float, default=2.0,
                         help="Repetition time in seconds")
     parser.add_argument("--hrf_model", type=str, default="spm",
-                        help="HRF model to use (spm, glover, etc.)")
+                        help="HRF model to use")
     parser.add_argument("--n_splits", type=int, default=50,
                         help="Number of cross-validation splits")
     parser.add_argument("--test_size", type=float, default=0.3,
@@ -395,12 +437,11 @@ def main():
 
     args = parser.parse_args()
 
-    # Verify input files match
     if len(args.nii_files) != len(args.events_files):
         raise ValueError(f"Number of NIfTI files ({len(args.nii_files)}) does not match number of event files ({len(args.events_files)})")
 
     print(f"\n{'='*60}")
-    print(f"Cross-validated GLM (following working approach)")
+    print(f"Cross-validated GLM with Percent Change and Run-Specific Polynomials")
     print(f"{'='*60}")
     print(f"Input files: {len(args.nii_files)} runs")
     print(f"Parameters:")
@@ -414,6 +455,7 @@ def main():
     # Load mask
     print("Loading mask...")
     mask_img = nib.load(args.mask)
+    print(f"Mask shape: {mask_img.shape}")
 
     # Create cross-validation splits
     splitter = ShuffleSplit(
@@ -423,9 +465,7 @@ def main():
     )
     splits = list(splitter.split(args.nii_files))
 
-    # --------------------------------------------------------
-    # REAL DATA
-    # --------------------------------------------------------
+    # Run real data CV
     if not args.only_permutations:
         print("\n" + "="*60)
         print("RUNNING REAL DATA CV")
@@ -449,10 +489,6 @@ def main():
         out_mean = f"{args.output_prefix}_real_mean_r2.nii.gz"
         unmask(mean_r2, mask_img).to_filename(out_mean)
         print(f"  Saved: {out_mean}")
-        
-        mask_data = mask_img.get_fdata().astype(bool)
-        print(f"    Mean R² (within mask): {np.mean(mean_r2[mask_data]):.6f}")
-        print(f"    Max R²: {np.max(mean_r2[mask_data]):.6f}")
 
         out_var = f"{args.output_prefix}_real_var_r2.nii.gz"
         unmask(var_r2, mask_img).to_filename(out_var)
@@ -461,9 +497,7 @@ def main():
         del mean_r2, var_r2
         gc.collect()
 
-    # --------------------------------------------------------
-    # PERMUTATIONS
-    # --------------------------------------------------------
+    # Run permutations
     if args.n_permutations > 0:
         print(f"\n{'='*60}")
         print(f"RUNNING {args.n_permutations} PERMUTATIONS")
