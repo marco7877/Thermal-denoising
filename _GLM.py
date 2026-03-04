@@ -8,95 +8,28 @@ from nilearn.masking import apply_mask, unmask
 from nilearn.image import resample_to_img, concat_imgs, get_data, load_img, clean_img, new_img_like
 from nilearn.glm.first_level import FirstLevelModel
 from sklearn.model_selection import ShuffleSplit
+from sklearn.metrics import r2_score
+from scipy import stats
 from tqdm import tqdm
 import gc
+import warnings
+warnings.filterwarnings('ignore')
 
 
 # ============================================================
 # Utilities
 # ============================================================
 
-def percent_change_img(img, mask_img):
-    """
-    Convert image to percent change: (x - mean)/mean * 100
-    
-    This version includes detailed debugging to track the scaling
-    """
-    # Get data as numpy array
-    data = get_data(img).astype(np.float64)
-    mask_data = mask_img.get_fdata().astype(bool)
-    
-    # Get original shape
-    original_shape = data.shape
-    n_timepoints = original_shape[-1]
-    
-    print(f"    Debug - Original data stats:")
-    print(f"      Shape: {original_shape}")
-    print(f"      Overall range: [{np.min(data):.2f}, {np.max(data):.2f}]")
-    print(f"      Overall mean: {np.mean(data):.2f}")
-    print(f"      Overall std: {np.std(data):.2f}")
-    
-    # Reshape to voxels × time
-    n_voxels = np.prod(original_shape[:-1])
-    data_reshaped = data.reshape(n_voxels, n_timepoints)
-    mask_flat = mask_data.ravel()
-    
-    # Only process masked voxels
-    masked_data = data_reshaped[mask_flat, :]
-    print(f"    Debug - Masked voxels: {masked_data.shape[0]}, Timepoints: {masked_data.shape[1]}")
-    
-    if masked_data.size > 0:
-        # Compute mean for each masked voxel across time
-        voxel_means = np.mean(masked_data, axis=1, keepdims=True)
-        
-        print(f"    Debug - Voxel means stats:")
-        print(f"      Range: [{np.min(voxel_means):.2f}, {np.max(voxel_means):.2f}]")
-        print(f"      Mean of means: {np.mean(voxel_means):.2f}")
-        print(f"      Std of means: {np.std(voxel_means):.2f}")
-        
-        # Check if voxel means are reasonable
-        if np.mean(voxel_means) > 10000:
-            print(f"    WARNING: Very large mean values! Data might be in unexpected units")
-        if np.mean(voxel_means) < 0.1:
-            print(f"    WARNING: Very small mean values! Data might already be normalized")
-        
-        # Avoid division by zero or very small numbers
-        voxel_means_safe = np.where(np.abs(voxel_means) < 1e-6, 1, voxel_means)
-        
-        # Convert to percent change: (x - mean)/mean * 100
-        masked_pc = (masked_data - voxel_means_safe) / voxel_means_safe * 100
-        
-        print(f"    Debug - Percent change stats:")
-        print(f"      Range: [{np.min(masked_pc):.2f}, {np.max(masked_pc):.2f}]")
-        print(f"      Mean: {np.mean(masked_pc):.2f}")
-        print(f"      Std: {np.std(masked_pc):.2f}")
-        
-        # Check if percent change is reasonable
-        if np.max(np.abs(masked_pc)) > 1000:
-            print(f"    WARNING: Very large percent change values (>1000%)!")
-            print(f"    This suggests the data might not be raw BOLD signal")
-        
-        # Put back into full array
-        data_pc_reshaped = np.zeros_like(data_reshaped)
-        data_pc_reshaped[mask_flat, :] = masked_pc
-    else:
-        data_pc_reshaped = data_reshaped
-    
-    # Reshape back to original 4D
-    data_pc = data_pc_reshaped.reshape(original_shape).astype(np.float32)
-    
-    return new_img_like(img, data_pc)
-
-
 def load_and_preprocess_runs(nii_files, mask_img):
     """
-    Load all runs and convert to percent change FIRST
+    Load all runs and return with their number of timepoints
     """
     print("\n" + "="*60)
-    print("STEP 1: Loading and converting to percent change")
+    print("STEP 1: Loading runs")
     print("="*60)
     
     all_runs_imgs = []
+    run_timepoints = []
     reference_img = None
     
     for i, f in enumerate(nii_files):
@@ -113,25 +46,32 @@ def load_and_preprocess_runs(nii_files, mask_img):
                 print(f"    Resampling to match reference space...")
                 img = resample_to_img(img, reference_img, interpolation='continuous')
         
-        # Convert to percent change
-        print(f"    Converting to percent change...")
-        img_pc = percent_change_img(img, mask_img)
-        all_runs_imgs.append(img_pc)
+        # Get number of timepoints
+        n_timepoints = img.shape[-1]
+        run_timepoints.append(n_timepoints)
+        all_runs_imgs.append(img)
         
-        # Final check for this run
-        data_sample = get_data(img_pc)[mask_img.get_fdata().astype(bool)]
+        print(f"    Shape: {img.shape}, Timepoints: {n_timepoints}")
+        
+        # Quick check of raw data
+        data_sample = get_data(img)[mask_img.get_fdata().astype(bool)]
         if len(data_sample) > 0:
-            print(f"    FINAL - Run {i+1} percent change stats:")
+            print(f"    Raw data stats (within mask):")
             print(f"      Range: [{np.min(data_sample):.2f}, {np.max(data_sample):.2f}]")
             print(f"      Mean: {np.mean(data_sample):.2f}")
-            print(f"      Std: {np.std(data_sample):.2f}")
     
-    return all_runs_imgs, reference_img
+    # Print summary
+    print(f"\n  Summary of run timepoints:")
+    for i, tp in enumerate(run_timepoints):
+        print(f"    Run {i}: {tp} timepoints")
+    print(f"    Total timepoints across all runs: {sum(run_timepoints)}")
+    
+    return all_runs_imgs, reference_img, run_timepoints
 
 
-def load_design_matrices(events_files, n_task_regressors, permute=False, seed=None):
+def load_design_matrices(events_files, run_timepoints, n_task_regressors, permute=False, seed=None):
     """
-    Load precomputed design matrices from CSV files
+    Load precomputed design matrices and verify they match run timepoints
     """
     rng = np.random.default_rng(seed)
     designs = []
@@ -149,6 +89,24 @@ def load_design_matrices(events_files, n_task_regressors, permute=False, seed=No
         # Remove any empty columns
         df = df.loc[:, ~df.columns.str.contains('^Unnamed')]
         
+        print(f"    Design matrix has {len(df)} rows")
+        print(f"    fMRI run {i} has {run_timepoints[i]} timepoints")
+        
+        # Check if number of rows matches run timepoints
+        if len(df) != run_timepoints[i]:
+            print(f"    WARNING: Mismatch in timepoints for run {i}!")
+            print(f"      Design matrix: {len(df)} rows")
+            print(f"      fMRI run: {run_timepoints[i]} timepoints")
+            print(f"      This will cause problems when concatenating!")
+            
+            # Option 1: Truncate to minimum
+            # min_tp = min(len(df), run_timepoints[i])
+            # df = df.iloc[:min_tp].reset_index(drop=True)
+            # print(f"      Truncated to {min_tp} rows")
+            
+            # Option 2: Raise error (safer)
+            raise ValueError(f"Timepoint mismatch for run {i}: fMRI={run_timepoints[i]}, Design={len(df)}")
+        
         if permute:
             df = df.sample(frac=1, random_state=rng).reset_index(drop=True)
 
@@ -156,19 +114,28 @@ def load_design_matrices(events_files, n_task_regressors, permute=False, seed=No
         
         # Print column structure for first file
         if i == 0:
-            print(f"    All columns: {df.columns.tolist()}")
+            print(f"    Columns: {df.columns.tolist()}")
             print(f"    Task regressors (first {n_task_regressors}): {df.columns[:n_task_regressors].tolist()}")
             print(f"    Nuisance regressors: {df.columns[n_task_regressors:].tolist()}")
-            print(f"    Design matrix shape: {df.shape}")
-            print(f"    Task regressor range: [{np.min(df.values[:, :n_task_regressors]):.4f}, {np.max(df.values[:, :n_task_regressors]):.4f}]")
-            print(f"    Nuisance regressor range: [{np.min(df.values[:, n_task_regressors:]):.4f}, {np.max(df.values[:, n_task_regressors:]):.4f}]")
+
+    # Print summary
+    print(f"\n  Summary of design matrix rows:")
+    for i, design in enumerate(designs):
+        print(f"    Run {i}: {len(design)} rows")
+    print(f"    Total rows across all designs: {sum(len(d) for d in designs)}")
 
     return designs
 
 
-def compute_r2_from_correlation(y_true, y_pred, mask):
+def compute_r2_multiple_methods(y_true, y_pred, mask):
     """
-    Compute R² as squared Pearson correlation for masked voxels only
+    Compute R² using multiple methods for verification
+    
+    Returns:
+    - r2_corr: Squared Pearson correlation
+    - r2_1minus: 1 - (SS_res/SS_tot)
+    - r2_sklearn: sklearn's r2_score
+    - diagnostics: Dictionary with additional stats for comparison
     """
     valid_voxels = mask.ravel() != 0
     
@@ -178,26 +145,93 @@ def compute_r2_from_correlation(y_true, y_pred, mask):
     y_true_valid = y_true_reshaped[valid_voxels, :]
     y_pred_valid = y_pred_reshaped[valid_voxels, :]
     
-    # Center the variables
-    y_true_centered = y_true_valid - np.mean(y_true_valid, axis=1, keepdims=True)
-    y_pred_centered = y_pred_valid - np.mean(y_pred_valid, axis=1, keepdims=True)
+    n_voxels = y_true_valid.shape[0]
+    n_timepoints = y_true_valid.shape[1]
     
-    # Compute Pearson correlation
-    numerator = np.sum(y_true_centered * y_pred_centered, axis=1)
-    denominator = np.sqrt(
-        np.sum(y_true_centered**2, axis=1) * 
-        np.sum(y_pred_centered**2, axis=1)
-    )
+    print(f"    R² computation: {n_voxels} voxels, {n_timepoints} timepoints")
     
-    epsilon = 1e-8
-    correlation = numerator / (denominator + epsilon)
+    # Initialize arrays for each method
+    r2_corr = np.zeros(n_voxels)
+    r2_1minus = np.zeros(n_voxels)
+    r2_sklearn = np.zeros(n_voxels)
     
-    r2_values = correlation ** 2
+    # Additional diagnostics
+    mean_correlation = 0
+    neg_count_1minus = 0
+    neg_count_sklearn = 0
+    large_diff_count = 0
     
-    r2_full = np.zeros(y_true.shape[:-1], dtype=np.float32)
-    r2_full[valid_voxels.reshape(y_true.shape[:-1])] = r2_values
+    for v in range(n_voxels):
+        y_t = y_true_valid[v, :]
+        y_p = y_pred_valid[v, :]
+        
+        # Method 1: Squared Pearson correlation
+        corr = np.corrcoef(y_t, y_p)[0, 1]
+        if not np.isnan(corr):
+            r2_corr[v] = corr ** 2
+            mean_correlation += abs(corr)
+        else:
+            r2_corr[v] = 0
+        
+        # Method 2: 1 - (SS_residual / SS_total)
+        ss_res = np.sum((y_t - y_p) ** 2)
+        ss_tot = np.sum((y_t - np.mean(y_t)) ** 2)
+        r2_1minus[v] = 1 - (ss_res / (ss_tot + 1e-8))
+        if r2_1minus[v] < 0:
+            neg_count_1minus += 1
+        
+        # Method 3: sklearn's r2_score
+        r2_sklearn[v] = r2_score(y_t, y_p)
+        if r2_sklearn[v] < 0:
+            neg_count_sklearn += 1
+        
+        # Check for large discrepancies between methods
+        if abs(r2_corr[v] - r2_1minus[v]) > 0.01:
+            large_diff_count += 1
     
-    return r2_full
+    mean_correlation /= n_voxels
+    
+    # Create full 3D maps
+    r2_corr_full = np.zeros(y_true.shape[:-1], dtype=np.float32)
+    r2_1minus_full = np.zeros(y_true.shape[:-1], dtype=np.float32)
+    r2_sklearn_full = np.zeros(y_true.shape[:-1], dtype=np.float32)
+    
+    r2_corr_full[valid_voxels.reshape(y_true.shape[:-1])] = r2_corr
+    r2_1minus_full[valid_voxels.reshape(y_true.shape[:-1])] = r2_1minus
+    r2_sklearn_full[valid_voxels.reshape(y_true.shape[:-1])] = r2_sklearn
+    
+    # Print comparison of methods
+    print(f"\n    {'='*50}")
+    print(f"    R² METHOD COMPARISON")
+    print(f"    {'='*50}")
+    print(f"    Method 1 (Squared Correlation):")
+    print(f"      Mean: {np.mean(r2_corr):.6f}")
+    print(f"      Std:  {np.std(r2_corr):.6f}")
+    print(f"      Min:  {np.min(r2_corr):.6f}")
+    print(f"      Max:  {np.max(r2_corr):.6f}")
+    
+    print(f"\n    Method 2 (1 - SS_res/SS_tot):")
+    print(f"      Mean: {np.mean(r2_1minus):.6f}")
+    print(f"      Std:  {np.std(r2_1minus):.6f}")
+    print(f"      Min:  {np.min(r2_1minus):.6f}")
+    print(f"      Max:  {np.max(r2_1minus):.6f}")
+    print(f"      Negative R² voxels: {neg_count_1minus}/{n_voxels} ({100*neg_count_1minus/n_voxels:.2f}%)")
+    
+    print(f"\n    Method 3 (sklearn r2_score):")
+    print(f"      Mean: {np.mean(r2_sklearn):.6f}")
+    print(f"      Std:  {np.std(r2_sklearn):.6f}")
+    print(f"      Min:  {np.min(r2_sklearn):.6f}")
+    print(f"      Max:  {np.max(r2_sklearn):.6f}")
+    print(f"      Negative R² voxels: {neg_count_sklearn}/{n_voxels} ({100*neg_count_sklearn/n_voxels:.2f}%)")
+    
+    print(f"\n    Cross-method comparisons:")
+    print(f"      Mean absolute correlation: {mean_correlation:.6f}")
+    print(f"      Correlation between Method 1 and 2: {np.corrcoef(r2_corr, r2_1minus)[0,1]:.6f}")
+    print(f"      Correlation between Method 1 and 3: {np.corrcoef(r2_corr, r2_sklearn)[0,1]:.6f}")
+    print(f"      Voxels with >0.01 difference: {large_diff_count}/{n_voxels} ({100*large_diff_count/n_voxels:.2f}%)")
+    print(f"    {'='*50}")
+    
+    return r2_corr_full, r2_1minus_full, r2_sklearn_full
 
 
 # ============================================================
@@ -216,15 +250,16 @@ def run_cv(
     permute=False,
 ):
     """
-    Run cross-validated GLM with comprehensive debugging
+    Run cross-validated GLM with proper timepoint alignment and R² comparison
     """
     
-    # Step 1: Load all runs and convert to percent change
-    all_runs_imgs, reference_img = load_and_preprocess_runs(nii_files, mask_img)
+    # Step 1: Load all runs and get timepoints
+    all_runs_imgs, reference_img, run_timepoints = load_and_preprocess_runs(nii_files, mask_img)
     
-    # Load design matrices
+    # Load design matrices with timepoint alignment
     designs = load_design_matrices(
         events_files,
+        run_timepoints,
         n_task_regressors,
         permute=permute,
         seed=random_state,
@@ -235,9 +270,11 @@ def run_cv(
     mask_shape = mask_data.shape
     print(f"\nMask has {np.sum(mask_data)} voxels")
     
-    # Store results
-    r2_sum = np.zeros(mask_shape, dtype=np.float32)
-    r2_sq_sum = np.zeros(mask_shape, dtype=np.float32)
+    # Store results for each method
+    r2_corr_sum = np.zeros(mask_shape, dtype=np.float32)
+    r2_1minus_sum = np.zeros(mask_shape, dtype=np.float32)
+    r2_sklearn_sum = np.zeros(mask_shape, dtype=np.float32)
+    r2_corr_sq_sum = np.zeros(mask_shape, dtype=np.float32)
 
     for split_id, (train_idx, test_idx) in enumerate(splits):
         
@@ -252,26 +289,40 @@ def run_cv(
         train_imgs = [all_runs_imgs[i] for i in train_idx]
         train_designs = [designs[i] for i in train_idx]
         
+        # Calculate total timepoints for training
+        train_total_tp = sum(run_timepoints[i] for i in train_idx)
+        train_design_total_tp = sum(len(designs[i]) for i in train_idx)
+        print(f"  Training total timepoints: fMRI={train_total_tp}, Design={train_design_total_tp}")
+        
+        if train_total_tp != train_design_total_tp:
+            raise ValueError(f"Training timepoint mismatch! fMRI={train_total_tp}, Design={train_design_total_tp}")
+        
         print(f"  Concatenating {len(train_imgs)} training runs...")
         train_imgs_concat = concat_imgs(train_imgs)
         train_data = get_data(train_imgs_concat)
         print(f"    Training data shape: {train_data.shape}")
-        print(f"    Training data range: [{np.min(train_data):.2f}, {np.max(train_data):.2f}]")
-        print(f"    Training data mean: {np.mean(train_data):.2f}")
+        print(f"    Training data timepoints: {train_data.shape[-1]}")
         
         train_design_matrix = pd.concat(train_designs, ignore_index=True)
         train_design_matrix = train_design_matrix.fillna(0)
         print(f"    Training design matrix shape: {train_design_matrix.shape}")
-        print(f"    Training design matrix range: [{np.min(train_design_matrix.values):.4f}, {np.max(train_design_matrix.values):.4f}]")
+        print(f"    Training design matrix rows: {len(train_design_matrix)}")
+        
+        # Final check
+        if train_data.shape[-1] != len(train_design_matrix):
+            raise ValueError(f"Final timepoint mismatch! Data: {train_data.shape[-1]}, Design: {len(train_design_matrix)}")
         
         print(f"  Fitting GLM on training data...")
+        print(f"    signal_scaling='psc' will convert to percent change")
+        
         fmri_glm = FirstLevelModel(
             t_r=tr,
             mask_img=mask_img,
-            standardize=False,
-            signal_scaling=False,
+            standardize=True,           # Z-score design matrix
+            signal_scaling='psc',        # Convert to percent change
             hrf_model=hrf_model,
-            minimize_memory=True
+            minimize_memory=True,
+            verbose=0
         )
         
         fmri_glm = fmri_glm.fit(train_imgs_concat, design_matrices=train_design_matrix)
@@ -289,41 +340,50 @@ def run_cv(
         )
         betas = get_data(betas_img).astype(np.float32)
         print(f"    Betas shape: {betas.shape}")
-        print(f"    Betas range: [{np.min(betas):.2f}, {np.max(betas):.2f}]")
-        print(f"    Betas mean: {np.mean(betas):.2f}")
-        print(f"    Betas std: {np.std(betas):.2f}")
+        print(f"    Betas range: [{np.min(betas):.4f}, {np.max(betas):.4f}]")
         
         # --- TESTING ---
         print(f"\n  --- Testing Phase ---")
         test_imgs = [all_runs_imgs[i] for i in test_idx]
         test_designs = [designs[i] for i in test_idx]
         
+        # Calculate total timepoints for testing
+        test_total_tp = sum(run_timepoints[i] for i in test_idx)
+        test_design_total_tp = sum(len(designs[i]) for i in test_idx)
+        print(f"  Testing total timepoints: fMRI={test_total_tp}, Design={test_design_total_tp}")
+        
+        if test_total_tp != test_design_total_tp:
+            raise ValueError(f"Testing timepoint mismatch! fMRI={test_total_tp}, Design={test_design_total_tp}")
+        
         print(f"  Concatenating {len(test_imgs)} test runs...")
         test_imgs_concat = concat_imgs(test_imgs)
-        test_data_raw = get_data(test_imgs_concat)
-        print(f"    Raw test data shape: {test_data_raw.shape}")
-        print(f"    Raw test data range: [{np.min(test_data_raw):.2f}, {np.max(test_data_raw):.2f}]")
-        print(f"    Raw test data mean: {np.mean(test_data_raw):.2f}")
         
         test_design_matrix = pd.concat(test_designs, ignore_index=True)
         test_design_matrix = test_design_matrix.fillna(0)
         print(f"    Test design matrix shape: {test_design_matrix.shape}")
+        print(f"    Test design matrix rows: {len(test_design_matrix)}")
         
-        # Regress out nuisance
+        # Final check
+        test_data = get_data(test_imgs_concat)
+        if test_data.shape[-1] != len(test_design_matrix):
+            raise ValueError(f"Test timepoint mismatch! Data: {test_data.shape[-1]}, Design: {len(test_design_matrix)}")
+        
+        # Regress out nuisance with clean_img
         print(f"  Regressing out nuisance regressors...")
+        
         nuisance_regressors = test_design_matrix.values[:, n_task_regressors:].astype(np.float32)
         print(f"    Nuisance regressors shape: {nuisance_regressors.shape}")
-        print(f"    Nuisance regressors range: [{np.min(nuisance_regressors):.4f}, {np.max(nuisance_regressors):.4f}]")
         
         confounds_df = pd.DataFrame(
             nuisance_regressors,
             columns=[f"nuisance_{i}" for i in range(nuisance_regressors.shape[1])]
         )
         
+        # Use clean_img to remove nuisance effects
         test_imgs_cleaned = clean_img(
             test_imgs_concat,
             confounds=confounds_df,
-            detrend=False,
+            detrend=True,
             standardize=False,
             t_r=tr
         )
@@ -331,9 +391,8 @@ def run_cv(
         test_data_cleaned = get_data(test_imgs_cleaned).astype(np.float32)
         print(f"    Cleaned test data range: [{np.min(test_data_cleaned):.2f}, {np.max(test_data_cleaned):.2f}]")
         print(f"    Cleaned test data mean: {np.mean(test_data_cleaned):.2f}")
-        print(f"    Cleaned test data std: {np.std(test_data_cleaned):.2f}")
         
-        # Get task regressors
+        # Get task regressors for prediction
         test_task_regressors = test_design_matrix.values[:, :n_task_regressors].astype(np.float32)
         print(f"    Test task regressors shape: {test_task_regressors.shape}")
         print(f"    Task regressors range: [{np.min(test_task_regressors):.4f}, {np.max(test_task_regressors):.4f}]")
@@ -343,10 +402,11 @@ def run_cv(
         mask_flat = mask_data.ravel()
         betas_masked = betas_reshaped[mask_flat, :]
         print(f"    Betas masked shape: {betas_masked.shape}")
-        print(f"    Betas masked range: [{np.min(betas_masked):.2f}, {np.max(betas_masked):.2f}]")
+        print(f"    Betas masked range: [{np.min(betas_masked):.4f}, {np.max(betas_masked):.4f}]")
         
         test_data_reshaped = test_data_cleaned.reshape(-1, test_data_cleaned.shape[-1])
         test_data_masked = test_data_reshaped[mask_flat, :]
+        print(f"    Test data masked shape: {test_data_masked.shape}")
         
         # Predict
         print(f"  Predicting test time series...")
@@ -357,18 +417,18 @@ def run_cv(
             task_regressor = test_task_regressors[:, task_idx:task_idx+1].T
             task_contribution = task_beta @ task_regressor
             predicted += task_contribution
-            print(f"    Task {task_idx+1} contribution range: [{np.min(task_contribution):.2f}, {np.max(task_contribution):.2f}]")
+            print(f"    Task {task_idx+1} contribution range: [{np.min(task_contribution):.4f}, {np.max(task_contribution):.4f}]")
         
-        print(f"    Final predicted range: [{np.min(predicted):.2f}, {np.max(predicted):.2f}]")
-        print(f"    Final predicted mean: {np.mean(predicted):.2f}")
-        print(f"    Final predicted std: {np.std(predicted):.2f}")
+        print(f"    Predicted range: [{np.min(predicted):.4f}, {np.max(predicted):.4f}]")
+        print(f"    Predicted mean: {np.mean(predicted):.4f}")
+        print(f"    Predicted std: {np.std(predicted):.4f}")
         
         # Compare scales
-        ratio = np.std(predicted) / (np.std(test_data_masked) + 1e-8)
-        print(f"    Prediction/Data std ratio: {ratio:.4f}")
+        scale_ratio = np.std(predicted) / (np.std(test_data_masked) + 1e-8)
+        print(f"    Scale ratio (predicted/actual): {scale_ratio:.4f}")
         
-        # Compute R²
-        print(f"  Computing R²...")
+        # Compute R² with multiple methods
+        print(f"  Computing R² with multiple methods...")
         
         test_data_4d = np.zeros(mask_shape + (test_data_masked.shape[1],), dtype=np.float32)
         predicted_4d = np.zeros(mask_shape + (predicted.shape[1],), dtype=np.float32)
@@ -376,39 +436,56 @@ def run_cv(
         test_data_4d[mask_data, :] = test_data_masked
         predicted_4d[mask_data, :] = predicted
         
-        r2_map = compute_r2_from_correlation(test_data_4d, predicted_4d, mask_data)
+        r2_corr, r2_1minus, r2_sklearn = compute_r2_multiple_methods(
+            test_data_4d, predicted_4d, mask_data
+        )
         
-        r2_values = r2_map[mask_data]
-        mean_r2 = np.mean(r2_values)
-        print(f"    R² statistics (within mask):")
-        print(f"      Mean: {mean_r2:.6f}")
-        print(f"      Std: {np.std(r2_values):.6f}")
-        print(f"      Min: {np.min(r2_values):.6f}")
-        print(f"      Max: {np.max(r2_values):.6f}")
-
-        # Accumulate
-        r2_sum += r2_map
-        r2_sq_sum += r2_map ** 2
+        # Accumulate results for each method
+        r2_corr_sum += r2_corr
+        r2_1minus_sum += r2_1minus
+        r2_sklearn_sum += r2_sklearn
+        r2_corr_sq_sum += r2_corr ** 2
 
         # Clean up
-        del fmri_glm, betas, betas_reshaped, betas_masked, predicted, test_data_cleaned, r2_map
+        del fmri_glm, betas, betas_reshaped, betas_masked, predicted, test_data_cleaned
         del test_imgs_cleaned, train_imgs_concat, test_imgs_concat
         gc.collect()
 
     n_splits = len(splits)
-    mean_r2 = r2_sum / n_splits
-    var_r2 = (r2_sq_sum / n_splits) - (mean_r2 ** 2)
+    
+    # Final results for each method
+    mean_r2_corr = r2_corr_sum / n_splits
+    mean_r2_1minus = r2_1minus_sum / n_splits
+    mean_r2_sklearn = r2_sklearn_sum / n_splits
+    var_r2_corr = (r2_corr_sq_sum / n_splits) - (mean_r2_corr ** 2)
 
     print(f"\n{'='*60}")
-    print("FINAL RESULTS")
+    print("FINAL RESULTS - ACROSS ALL SPLITS")
     print(f"{'='*60}")
-    final_mean = np.mean(mean_r2[mask_data])
-    final_std = np.std(mean_r2[mask_data])
-    print(f"Mean R² across all splits (within mask): {final_mean:.6f}")
-    print(f"Std R² across all splits: {final_std:.6f}")
-    print(f"R² range: [{np.min(mean_r2[mask_data]):.6f}, {np.max(mean_r2[mask_data]):.6f}]")
+    
+    print(f"\nMethod 1 (Squared Correlation):")
+    print(f"  Mean R²: {np.mean(mean_r2_corr[mask_data]):.6f}")
+    print(f"  Std R²:  {np.std(mean_r2_corr[mask_data]):.6f}")
+    print(f"  Range:   [{np.min(mean_r2_corr[mask_data]):.6f}, {np.max(mean_r2_corr[mask_data]):.6f}]")
+    
+    print(f"\nMethod 2 (1 - SS_res/SS_tot):")
+    print(f"  Mean R²: {np.mean(mean_r2_1minus[mask_data]):.6f}")
+    print(f"  Std R²:  {np.std(mean_r2_1minus[mask_data]):.6f}")
+    print(f"  Range:   [{np.min(mean_r2_1minus[mask_data]):.6f}, {np.max(mean_r2_1minus[mask_data]):.6f}]")
+    
+    print(f"\nMethod 3 (sklearn r2_score):")
+    print(f"  Mean R²: {np.mean(mean_r2_sklearn[mask_data]):.6f}")
+    print(f"  Std R²:  {np.std(mean_r2_sklearn[mask_data]):.6f}")
+    print(f"  Range:   [{np.min(mean_r2_sklearn[mask_data]):.6f}, {np.max(mean_r2_sklearn[mask_data]):.6f}]")
+    
+    # Cross-method correlations for final results
+    corr_1_2 = np.corrcoef(mean_r2_corr[mask_data].ravel(), mean_r2_1minus[mask_data].ravel())[0,1]
+    corr_1_3 = np.corrcoef(mean_r2_corr[mask_data].ravel(), mean_r2_sklearn[mask_data].ravel())[0,1]
+    print(f"\nCross-method correlations (final maps):")
+    print(f"  Method 1 vs 2: {corr_1_2:.6f}")
+    print(f"  Method 1 vs 3: {corr_1_3:.6f}")
 
-    return mean_r2.astype(np.float32), var_r2.astype(np.float32)
+    return mean_r2_corr.astype(np.float32), var_r2_corr.astype(np.float32)
 
 
 # ============================================================
@@ -416,7 +493,7 @@ def run_cv(
 # ============================================================
 
 def main():
-    parser = argparse.ArgumentParser(description="Cross-validated GLM with comprehensive debugging")
+    parser = argparse.ArgumentParser(description="Cross-validated GLM with R² method comparison")
     
     parser.add_argument("--nii_files", nargs="+", required=True,
                         help="List of NIfTI files (one per run)")
@@ -449,7 +526,7 @@ def main():
         raise ValueError(f"Number of NIfTI files ({len(args.nii_files)}) does not match number of event files ({len(args.events_files)})")
 
     print(f"\n{'='*60}")
-    print("CROSS-VALIDATED GLM WITH COMPREHENSIVE DEBUGGING")
+    print("CROSS-VALIDATED GLM WITH R² METHOD COMPARISON")
     print(f"{'='*60}")
     print(f"Input files: {len(args.nii_files)} runs")
     print(f"Parameters:")
@@ -464,7 +541,6 @@ def main():
     print("Loading mask...")
     mask_img = nib.load(args.mask)
     print(f"Mask shape: {mask_img.shape}")
-    print(f"Mask affine:\n{mask_img.affine}")
 
     # Create cross-validation splits
     splitter = ShuffleSplit(
