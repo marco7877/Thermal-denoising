@@ -23,7 +23,7 @@ def percent_change_img(img, mask_img):
     This is a simpler implementation that doesn't rely on internal nilearn functions
     """
     # Get data as numpy array
-    data = get_data(img).astype(np.float32)
+    data = get_data(img).astype(np.float64)  # Use float64 for precision
     mask_data = mask_img.get_fdata().astype(bool)
     
     # Get original shape
@@ -35,6 +35,9 @@ def percent_change_img(img, mask_img):
     data_reshaped = data.reshape(n_voxels, n_timepoints)
     mask_flat = mask_data.ravel()
     
+    print(f"    Debug - Original data range: [{np.min(data):.2f}, {np.max(data):.2f}]")
+    print(f"    Debug - Original data mean: {np.mean(data):.2f}")
+    
     # Only process masked voxels
     masked_data = data_reshaped[mask_flat, :]
     
@@ -42,11 +45,15 @@ def percent_change_img(img, mask_img):
         # Compute mean for each masked voxel
         voxel_means = np.mean(masked_data, axis=1, keepdims=True)
         
+        print(f"    Debug - Voxel means range: [{np.min(voxel_means):.2f}, {np.max(voxel_means):.2f}]")
+        
         # Avoid division by zero
         voxel_means = np.where(voxel_means == 0, 1, voxel_means)
         
         # Convert to percent change
         masked_pc = (masked_data - voxel_means) / voxel_means * 100
+        
+        print(f"    Debug - Percent change range: [{np.min(masked_pc):.2f}, {np.max(masked_pc):.2f}]")
         
         # Put back into full array
         data_pc_reshaped = np.zeros_like(data_reshaped)
@@ -55,7 +62,7 @@ def percent_change_img(img, mask_img):
         data_pc_reshaped = data_reshaped
     
     # Reshape back to original 4D
-    data_pc = data_pc_reshaped.reshape(original_shape)
+    data_pc = data_pc_reshaped.reshape(original_shape).astype(np.float32)
     
     # Return as new image with same header/affine
     return new_img_like(img, data_pc)
@@ -94,6 +101,8 @@ def load_and_preprocess_runs(nii_files, mask_img):
         data_sample = get_data(img_pc)[mask_img.get_fdata().astype(bool)]
         if len(data_sample) > 0:
             print(f"    Percent change range: [{np.min(data_sample):.2f}, {np.max(data_sample):.2f}]")
+            print(f"    Percent change mean: {np.mean(data_sample):.2f}")
+            print(f"    Percent change std: {np.std(data_sample):.2f}")
     
     return all_runs_imgs, reference_img
 
@@ -252,6 +261,7 @@ def run_cv(
         )
         betas = get_data(betas_img).astype(np.float32)  # Shape: (x, y, z, n_task)
         print(f"  Betas shape: {betas.shape}")
+        print(f"  Betas range: [{np.min(betas):.4f}, {np.max(betas):.4f}]")
         
         # --- TESTING ---
         # Get test images (already in percent change) and design matrices
@@ -291,16 +301,20 @@ def run_cv(
         
         # Get the cleaned data
         test_data_cleaned = get_data(test_imgs_cleaned).astype(np.float32)
+        print(f"  Cleaned test data range: [{np.min(test_data_cleaned):.2f}, {np.max(test_data_cleaned):.2f}]")
+        print(f"  Cleaned test data mean: {np.mean(test_data_cleaned):.2f}")
         
         # Step 3: Get task regressors for prediction
         test_task_regressors = test_design_matrix.values[:, :n_task_regressors].astype(np.float32)
         print(f"  Test task regressors shape: {test_task_regressors.shape}")
+        print(f"  Task regressors range: [{np.min(test_task_regressors):.4f}, {np.max(test_task_regressors):.4f}]")
         
         # Step 4: Reshape betas for prediction
         betas_reshaped = betas.reshape(-1, n_task_regressors)
         mask_flat = mask_data.ravel()
         betas_masked = betas_reshaped[mask_flat, :]
         print(f"  Betas masked shape: {betas_masked.shape}")
+        print(f"  Betas masked range: [{np.min(betas_masked):.4f}, {np.max(betas_masked):.4f}]")
         
         # Step 5: Predict by summing task contributions
         print(f"  Predicting test time series...")
@@ -318,9 +332,12 @@ def run_cv(
             task_regressor = test_task_regressors[:, task_idx:task_idx+1].T
             task_contribution = task_beta @ task_regressor
             predicted += task_contribution
+            print(f"    Task {task_idx+1} contribution range: [{np.min(task_contribution):.2f}, {np.max(task_contribution):.2f}]")
         
-        print(f"  Predicted range: [{np.min(predicted):.4f}, {np.max(predicted):.4f}]")
-        print(f"  Cleaned test data range: [{np.min(test_data_masked):.4f}, {np.max(test_data_masked):.4f}]")
+        print(f"  Predicted range: [{np.min(predicted):.2f}, {np.max(predicted):.2f}]")
+        print(f"  Predicted mean: {np.mean(predicted):.2f}")
+        print(f"  Cleaned test data range: [{np.min(test_data_masked):.2f}, {np.max(test_data_masked):.2f}]")
+        print(f"  Cleaned test data mean: {np.mean(test_data_masked):.2f}")
         
         # Step 6: Compute R²
         print(f"  Computing R²...")
