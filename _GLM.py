@@ -20,40 +20,61 @@ def percent_change_img(img, mask_img):
     """
     Convert image to percent change: (x - mean)/mean * 100
     
-    This is a simpler implementation that doesn't rely on internal nilearn functions
+    This version includes detailed debugging to track the scaling
     """
     # Get data as numpy array
-    data = get_data(img).astype(np.float64)  # Use float64 for precision
+    data = get_data(img).astype(np.float64)
     mask_data = mask_img.get_fdata().astype(bool)
     
     # Get original shape
     original_shape = data.shape
+    n_timepoints = original_shape[-1]
+    
+    print(f"    Debug - Original data stats:")
+    print(f"      Shape: {original_shape}")
+    print(f"      Overall range: [{np.min(data):.2f}, {np.max(data):.2f}]")
+    print(f"      Overall mean: {np.mean(data):.2f}")
+    print(f"      Overall std: {np.std(data):.2f}")
     
     # Reshape to voxels × time
     n_voxels = np.prod(original_shape[:-1])
-    n_timepoints = original_shape[-1]
     data_reshaped = data.reshape(n_voxels, n_timepoints)
     mask_flat = mask_data.ravel()
     
-    print(f"    Debug - Original data range: [{np.min(data):.2f}, {np.max(data):.2f}]")
-    print(f"    Debug - Original data mean: {np.mean(data):.2f}")
-    
     # Only process masked voxels
     masked_data = data_reshaped[mask_flat, :]
+    print(f"    Debug - Masked voxels: {masked_data.shape[0]}, Timepoints: {masked_data.shape[1]}")
     
     if masked_data.size > 0:
-        # Compute mean for each masked voxel
+        # Compute mean for each masked voxel across time
         voxel_means = np.mean(masked_data, axis=1, keepdims=True)
         
-        print(f"    Debug - Voxel means range: [{np.min(voxel_means):.2f}, {np.max(voxel_means):.2f}]")
+        print(f"    Debug - Voxel means stats:")
+        print(f"      Range: [{np.min(voxel_means):.2f}, {np.max(voxel_means):.2f}]")
+        print(f"      Mean of means: {np.mean(voxel_means):.2f}")
+        print(f"      Std of means: {np.std(voxel_means):.2f}")
         
-        # Avoid division by zero
-        voxel_means = np.where(voxel_means == 0, 1, voxel_means)
+        # Check if voxel means are reasonable
+        if np.mean(voxel_means) > 10000:
+            print(f"    WARNING: Very large mean values! Data might be in unexpected units")
+        if np.mean(voxel_means) < 0.1:
+            print(f"    WARNING: Very small mean values! Data might already be normalized")
         
-        # Convert to percent change
-        masked_pc = (masked_data - voxel_means) / voxel_means * 100
+        # Avoid division by zero or very small numbers
+        voxel_means_safe = np.where(np.abs(voxel_means) < 1e-6, 1, voxel_means)
         
-        print(f"    Debug - Percent change range: [{np.min(masked_pc):.2f}, {np.max(masked_pc):.2f}]")
+        # Convert to percent change: (x - mean)/mean * 100
+        masked_pc = (masked_data - voxel_means_safe) / voxel_means_safe * 100
+        
+        print(f"    Debug - Percent change stats:")
+        print(f"      Range: [{np.min(masked_pc):.2f}, {np.max(masked_pc):.2f}]")
+        print(f"      Mean: {np.mean(masked_pc):.2f}")
+        print(f"      Std: {np.std(masked_pc):.2f}")
+        
+        # Check if percent change is reasonable
+        if np.max(np.abs(masked_pc)) > 1000:
+            print(f"    WARNING: Very large percent change values (>1000%)!")
+            print(f"    This suggests the data might not be raw BOLD signal")
         
         # Put back into full array
         data_pc_reshaped = np.zeros_like(data_reshaped)
@@ -64,22 +85,22 @@ def percent_change_img(img, mask_img):
     # Reshape back to original 4D
     data_pc = data_pc_reshaped.reshape(original_shape).astype(np.float32)
     
-    # Return as new image with same header/affine
     return new_img_like(img, data_pc)
 
 
 def load_and_preprocess_runs(nii_files, mask_img):
     """
     Load all runs and convert to percent change FIRST
-    Then they're ready for nuisance regression later
     """
-    print("\nLoading runs and converting to percent change...")
+    print("\n" + "="*60)
+    print("STEP 1: Loading and converting to percent change")
+    print("="*60)
     
     all_runs_imgs = []
     reference_img = None
     
     for i, f in enumerate(nii_files):
-        print(f"  Processing run {i+1}/{len(nii_files)}: {f}")
+        print(f"\n  Processing run {i+1}/{len(nii_files)}: {f}")
         img = nib.load(f)
         
         # Use first run as reference
@@ -92,17 +113,18 @@ def load_and_preprocess_runs(nii_files, mask_img):
                 print(f"    Resampling to match reference space...")
                 img = resample_to_img(img, reference_img, interpolation='continuous')
         
-        # CRITICAL STEP: Convert to percent change immediately
+        # Convert to percent change
         print(f"    Converting to percent change...")
         img_pc = percent_change_img(img, mask_img)
         all_runs_imgs.append(img_pc)
         
-        # Quick check of the data range
+        # Final check for this run
         data_sample = get_data(img_pc)[mask_img.get_fdata().astype(bool)]
         if len(data_sample) > 0:
-            print(f"    Percent change range: [{np.min(data_sample):.2f}, {np.max(data_sample):.2f}]")
-            print(f"    Percent change mean: {np.mean(data_sample):.2f}")
-            print(f"    Percent change std: {np.std(data_sample):.2f}")
+            print(f"    FINAL - Run {i+1} percent change stats:")
+            print(f"      Range: [{np.min(data_sample):.2f}, {np.max(data_sample):.2f}]")
+            print(f"      Mean: {np.mean(data_sample):.2f}")
+            print(f"      Std: {np.std(data_sample):.2f}")
     
     return all_runs_imgs, reference_img
 
@@ -110,25 +132,36 @@ def load_and_preprocess_runs(nii_files, mask_img):
 def load_design_matrices(events_files, n_task_regressors, permute=False, seed=None):
     """
     Load precomputed design matrices from CSV files
-    These already have run-specific drift terms
     """
     rng = np.random.default_rng(seed)
     designs = []
 
+    print("\n" + "="*60)
+    print("STEP 2: Loading design matrices")
+    print("="*60)
+
     for i, f in enumerate(events_files):
-        print(f"  Loading design matrix {i+1}/{len(events_files)}: {f}")
+        print(f"\n  Loading design matrix {i+1}/{len(events_files)}: {f}")
         
-        # Load CSV file with apostrophe delimiter
-        df = pd.read_csv(f, delimiter="'", quotechar=None, quoting=3, engine='python')
+        # Load CSV file
+        df = pd.read_csv(f)
         
         # Remove any empty columns
         df = df.loc[:, ~df.columns.str.contains('^Unnamed')]
         
         if permute:
-            # Permute the rows (timepoints) for null distribution
             df = df.sample(frac=1, random_state=rng).reset_index(drop=True)
 
         designs.append(df)
+        
+        # Print column structure for first file
+        if i == 0:
+            print(f"    All columns: {df.columns.tolist()}")
+            print(f"    Task regressors (first {n_task_regressors}): {df.columns[:n_task_regressors].tolist()}")
+            print(f"    Nuisance regressors: {df.columns[n_task_regressors:].tolist()}")
+            print(f"    Design matrix shape: {df.shape}")
+            print(f"    Task regressor range: [{np.min(df.values[:, :n_task_regressors]):.4f}, {np.max(df.values[:, :n_task_regressors]):.4f}]")
+            print(f"    Nuisance regressor range: [{np.min(df.values[:, n_task_regressors:]):.4f}, {np.max(df.values[:, n_task_regressors:]):.4f}]")
 
     return designs
 
@@ -183,21 +216,13 @@ def run_cv(
     permute=False,
 ):
     """
-    Run cross-validated GLM with proper order:
-    1. Convert ALL data to percent change FIRST
-    2. Training: Fit GLM on training runs using ALL regressors
-    3. Extract task betas
-    4. Testing: 
-       a. Regress out nuisance from percent-change test data
-       b. Predict using task betas and task regressors
-       c. Compute R²
+    Run cross-validated GLM with comprehensive debugging
     """
     
-    # Step 1: Load all runs and convert to percent change FIRST
+    # Step 1: Load all runs and convert to percent change
     all_runs_imgs, reference_img = load_and_preprocess_runs(nii_files, mask_img)
     
     # Load design matrices
-    print("\nLoading design matrices...")
     designs = load_design_matrices(
         events_files,
         n_task_regressors,
@@ -205,9 +230,10 @@ def run_cv(
         seed=random_state,
     )
     
-    # Get mask data for later use
+    # Get mask data
     mask_data = mask_img.get_fdata().astype(bool)
     mask_shape = mask_data.shape
+    print(f"\nMask has {np.sum(mask_data)} voxels")
     
     # Store results
     r2_sum = np.zeros(mask_shape, dtype=np.float32)
@@ -216,32 +242,34 @@ def run_cv(
     for split_id, (train_idx, test_idx) in enumerate(splits):
         
         print(f"\n{'='*60}")
-        print(f"Processing split {split_id + 1}/{len(splits)}")
+        print(f"STEP 3: Processing split {split_id + 1}/{len(splits)}")
         print(f"{'='*60}")
         print(f"  Training runs: {train_idx}")
         print(f"  Testing runs: {test_idx}")
         
         # --- TRAINING ---
-        # Get training images (already in percent change) and design matrices
+        print(f"\n  --- Training Phase ---")
         train_imgs = [all_runs_imgs[i] for i in train_idx]
         train_designs = [designs[i] for i in train_idx]
         
-        # Concatenate training images
-        print(f"  Concatenating training runs...")
+        print(f"  Concatenating {len(train_imgs)} training runs...")
         train_imgs_concat = concat_imgs(train_imgs)
+        train_data = get_data(train_imgs_concat)
+        print(f"    Training data shape: {train_data.shape}")
+        print(f"    Training data range: [{np.min(train_data):.2f}, {np.max(train_data):.2f}]")
+        print(f"    Training data mean: {np.mean(train_data):.2f}")
         
-        # Concatenate design matrices
         train_design_matrix = pd.concat(train_designs, ignore_index=True)
         train_design_matrix = train_design_matrix.fillna(0)
-        print(f"  Training design matrix shape: {train_design_matrix.shape}")
+        print(f"    Training design matrix shape: {train_design_matrix.shape}")
+        print(f"    Training design matrix range: [{np.min(train_design_matrix.values):.4f}, {np.max(train_design_matrix.values):.4f}]")
         
-        # Fit GLM on percent-change data
         print(f"  Fitting GLM on training data...")
         fmri_glm = FirstLevelModel(
             t_r=tr,
             mask_img=mask_img,
-            standardize=False,  # Data already in percent change
-            signal_scaling=False,  # Don't scale further
+            standardize=False,
+            signal_scaling=False,
             hrf_model=hrf_model,
             minimize_memory=True
         )
@@ -259,74 +287,71 @@ def run_cv(
             contrast_matrix,
             output_type='effect_size'
         )
-        betas = get_data(betas_img).astype(np.float32)  # Shape: (x, y, z, n_task)
-        print(f"  Betas shape: {betas.shape}")
-        print(f"  Betas range: [{np.min(betas):.4f}, {np.max(betas):.4f}]")
+        betas = get_data(betas_img).astype(np.float32)
+        print(f"    Betas shape: {betas.shape}")
+        print(f"    Betas range: [{np.min(betas):.2f}, {np.max(betas):.2f}]")
+        print(f"    Betas mean: {np.mean(betas):.2f}")
+        print(f"    Betas std: {np.std(betas):.2f}")
         
         # --- TESTING ---
-        # Get test images (already in percent change) and design matrices
+        print(f"\n  --- Testing Phase ---")
         test_imgs = [all_runs_imgs[i] for i in test_idx]
         test_designs = [designs[i] for i in test_idx]
         
-        # Concatenate test images
-        print(f"  Concatenating test runs...")
+        print(f"  Concatenating {len(test_imgs)} test runs...")
         test_imgs_concat = concat_imgs(test_imgs)
+        test_data_raw = get_data(test_imgs_concat)
+        print(f"    Raw test data shape: {test_data_raw.shape}")
+        print(f"    Raw test data range: [{np.min(test_data_raw):.2f}, {np.max(test_data_raw):.2f}]")
+        print(f"    Raw test data mean: {np.mean(test_data_raw):.2f}")
         
-        # Get test design matrix
         test_design_matrix = pd.concat(test_designs, ignore_index=True)
         test_design_matrix = test_design_matrix.fillna(0)
-        print(f"  Test design matrix shape: {test_design_matrix.shape}")
+        print(f"    Test design matrix shape: {test_design_matrix.shape}")
         
-        # Step 2: Regress out nuisance regressors from percent-change test data
-        print(f"  Regressing out nuisance regressors from test data...")
-        
-        # Extract nuisance regressors (all columns after task regressors)
+        # Regress out nuisance
+        print(f"  Regressing out nuisance regressors...")
         nuisance_regressors = test_design_matrix.values[:, n_task_regressors:].astype(np.float32)
+        print(f"    Nuisance regressors shape: {nuisance_regressors.shape}")
+        print(f"    Nuisance regressors range: [{np.min(nuisance_regressors):.4f}, {np.max(nuisance_regressors):.4f}]")
         
-        # Create confounds DataFrame
         confounds_df = pd.DataFrame(
             nuisance_regressors,
             columns=[f"nuisance_{i}" for i in range(nuisance_regressors.shape[1])]
         )
         
-        # Use clean_img to remove nuisance effects from percent-change data
         test_imgs_cleaned = clean_img(
             test_imgs_concat,
             confounds=confounds_df,
-            detrend=False,  # Drift terms already in confounds
-            standardize=False,  # Keep percent change scale
+            detrend=False,
+            standardize=False,
             t_r=tr
         )
-        print(f"  Cleaned test images shape: {test_imgs_cleaned.shape}")
         
-        # Get the cleaned data
         test_data_cleaned = get_data(test_imgs_cleaned).astype(np.float32)
-        print(f"  Cleaned test data range: [{np.min(test_data_cleaned):.2f}, {np.max(test_data_cleaned):.2f}]")
-        print(f"  Cleaned test data mean: {np.mean(test_data_cleaned):.2f}")
+        print(f"    Cleaned test data range: [{np.min(test_data_cleaned):.2f}, {np.max(test_data_cleaned):.2f}]")
+        print(f"    Cleaned test data mean: {np.mean(test_data_cleaned):.2f}")
+        print(f"    Cleaned test data std: {np.std(test_data_cleaned):.2f}")
         
-        # Step 3: Get task regressors for prediction
+        # Get task regressors
         test_task_regressors = test_design_matrix.values[:, :n_task_regressors].astype(np.float32)
-        print(f"  Test task regressors shape: {test_task_regressors.shape}")
-        print(f"  Task regressors range: [{np.min(test_task_regressors):.4f}, {np.max(test_task_regressors):.4f}]")
+        print(f"    Test task regressors shape: {test_task_regressors.shape}")
+        print(f"    Task regressors range: [{np.min(test_task_regressors):.4f}, {np.max(test_task_regressors):.4f}]")
         
-        # Step 4: Reshape betas for prediction
+        # Reshape for prediction
         betas_reshaped = betas.reshape(-1, n_task_regressors)
         mask_flat = mask_data.ravel()
         betas_masked = betas_reshaped[mask_flat, :]
-        print(f"  Betas masked shape: {betas_masked.shape}")
-        print(f"  Betas masked range: [{np.min(betas_masked):.4f}, {np.max(betas_masked):.4f}]")
+        print(f"    Betas masked shape: {betas_masked.shape}")
+        print(f"    Betas masked range: [{np.min(betas_masked):.2f}, {np.max(betas_masked):.2f}]")
         
-        # Step 5: Predict by summing task contributions
-        print(f"  Predicting test time series...")
-        
-        # Reshape test data for comparison
         test_data_reshaped = test_data_cleaned.reshape(-1, test_data_cleaned.shape[-1])
         test_data_masked = test_data_reshaped[mask_flat, :]
         
-        # Initialize prediction
+        # Predict
+        print(f"  Predicting test time series...")
         predicted = np.zeros_like(test_data_masked)
         
-        # Sum task contributions
         for task_idx in range(n_task_regressors):
             task_beta = betas_masked[:, task_idx:task_idx+1]
             task_regressor = test_task_regressors[:, task_idx:task_idx+1].T
@@ -334,15 +359,17 @@ def run_cv(
             predicted += task_contribution
             print(f"    Task {task_idx+1} contribution range: [{np.min(task_contribution):.2f}, {np.max(task_contribution):.2f}]")
         
-        print(f"  Predicted range: [{np.min(predicted):.2f}, {np.max(predicted):.2f}]")
-        print(f"  Predicted mean: {np.mean(predicted):.2f}")
-        print(f"  Cleaned test data range: [{np.min(test_data_masked):.2f}, {np.max(test_data_masked):.2f}]")
-        print(f"  Cleaned test data mean: {np.mean(test_data_masked):.2f}")
+        print(f"    Final predicted range: [{np.min(predicted):.2f}, {np.max(predicted):.2f}]")
+        print(f"    Final predicted mean: {np.mean(predicted):.2f}")
+        print(f"    Final predicted std: {np.std(predicted):.2f}")
         
-        # Step 6: Compute R²
+        # Compare scales
+        ratio = np.std(predicted) / (np.std(test_data_masked) + 1e-8)
+        print(f"    Prediction/Data std ratio: {ratio:.4f}")
+        
+        # Compute R²
         print(f"  Computing R²...")
         
-        # Reconstruct 4D
         test_data_4d = np.zeros(mask_shape + (test_data_masked.shape[1],), dtype=np.float32)
         predicted_4d = np.zeros(mask_shape + (predicted.shape[1],), dtype=np.float32)
         
@@ -351,15 +378,13 @@ def run_cv(
         
         r2_map = compute_r2_from_correlation(test_data_4d, predicted_4d, mask_data)
         
-        # Statistics
         r2_values = r2_map[mask_data]
         mean_r2 = np.mean(r2_values)
-        std_r2 = np.std(r2_values)
-        print(f"  R² statistics (within mask):")
-        print(f"    Mean: {mean_r2:.6f}")
-        print(f"    Std: {std_r2:.6f}")
-        print(f"    Min: {np.min(r2_values):.6f}")
-        print(f"    Max: {np.max(r2_values):.6f}")
+        print(f"    R² statistics (within mask):")
+        print(f"      Mean: {mean_r2:.6f}")
+        print(f"      Std: {np.std(r2_values):.6f}")
+        print(f"      Min: {np.min(r2_values):.6f}")
+        print(f"      Max: {np.max(r2_values):.6f}")
 
         # Accumulate
         r2_sum += r2_map
@@ -375,7 +400,7 @@ def run_cv(
     var_r2 = (r2_sq_sum / n_splits) - (mean_r2 ** 2)
 
     print(f"\n{'='*60}")
-    print(f"Final Results")
+    print("FINAL RESULTS")
     print(f"{'='*60}")
     final_mean = np.mean(mean_r2[mask_data])
     final_std = np.std(mean_r2[mask_data])
@@ -391,7 +416,7 @@ def run_cv(
 # ============================================================
 
 def main():
-    parser = argparse.ArgumentParser(description="Cross-validated GLM with percent change first")
+    parser = argparse.ArgumentParser(description="Cross-validated GLM with comprehensive debugging")
     
     parser.add_argument("--nii_files", nargs="+", required=True,
                         help="List of NIfTI files (one per run)")
@@ -424,7 +449,7 @@ def main():
         raise ValueError(f"Number of NIfTI files ({len(args.nii_files)}) does not match number of event files ({len(args.events_files)})")
 
     print(f"\n{'='*60}")
-    print(f"Cross-validated GLM - Percent Change First")
+    print("CROSS-VALIDATED GLM WITH COMPREHENSIVE DEBUGGING")
     print(f"{'='*60}")
     print(f"Input files: {len(args.nii_files)} runs")
     print(f"Parameters:")
@@ -439,6 +464,7 @@ def main():
     print("Loading mask...")
     mask_img = nib.load(args.mask)
     print(f"Mask shape: {mask_img.shape}")
+    print(f"Mask affine:\n{mask_img.affine}")
 
     # Create cross-validation splits
     splitter = ShuffleSplit(
