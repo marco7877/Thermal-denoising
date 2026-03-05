@@ -11,7 +11,6 @@ from sklearn.model_selection import ShuffleSplit
 # -------------------------------
 
 def percent_signal_change(data, mask):
-    """Apply percent signal change to fMRI data."""
     mask_flat = mask.ravel()
     Y = data.reshape(-1, data.shape[-1])  # voxels × timepoints
     mean = Y[mask_flat].mean(axis=1, keepdims=True)
@@ -20,11 +19,9 @@ def percent_signal_change(data, mask):
     return Y.reshape(data.shape)
 
 def zscore(X):
-    """Z-score each column of design matrix."""
     return (X - X.mean(axis=0)) / np.where(X.std(axis=0) == 0, 1, X.std(axis=0))
 
 def block_diag_design(designs, run_timepoints, n_task):
-    """Build block-diagonal design ensuring rows match run timepoints."""
     blocks = []
     for i, d in enumerate(designs):
         n_tp = run_timepoints[i]
@@ -49,14 +46,13 @@ def fast_glm(X, Y):
     XtX = X.T @ X
     XtY = X.T @ Y
     beta = np.linalg.solve(XtX, XtY)
-    return beta  # regressors × voxels
+    return beta
 
 def compute_r2(Y_true, Y_pred):
     """Compute R² per voxel along timepoints."""
-    # Y_true, Y_pred: voxels × timepoints
     ss_res = np.sum((Y_true - Y_pred) ** 2, axis=1)
     ss_tot = np.sum((Y_true - Y_true.mean(axis=1, keepdims=True)) ** 2, axis=1)
-    return 1 - ss_res / (ss_tot + 1e-8)  # voxels array
+    return 1 - ss_res / (ss_tot + 1e-8)
 
 # -------------------------------
 # Cross-validation GLM
@@ -110,13 +106,9 @@ def run_cv(
 
         train_run_timepoints = [run_timepoints[i] for i in train_idx]
         X_train = block_diag_design(train_design_list, train_run_timepoints, n_task_regressors)
-        X_train = zscore(X_train)  # optional
+        X_train = zscore(X_train).astype(np.float32)  # timepoints × regressors
 
-        # Make sure X_train shape: timepoints × regressors
-        X_train = X_train.astype(np.float32)
-
-        # fast_glm expects: X (timepoints × regressors), Y (timepoints × voxels)
-        Y_train = train_data_masked.T  # now timepoints × voxels
+        Y_train = train_data_masked.T  # timepoints × voxels
         beta = fast_glm(X_train, Y_train)  # regressors × voxels
         task_betas = beta[:n_task_regressors, :]  # regressors × voxels
 
@@ -132,10 +124,11 @@ def run_cv(
 
         test_run_timepoints = [run_timepoints[i] for i in test_idx]
         X_test = block_diag_design(test_design_list, test_run_timepoints, n_task_regressors)
-        X_test = zscore(X_test)[:, :n_task_regressors].astype(np.float32)
+        X_test = zscore(X_test).astype(np.float32)
+        X_test_task = X_test[:, :n_task_regressors]  # timepoints × regressors
 
-        # Predict: voxels × timepoints
-        Y_pred = (task_betas.T @ X_test.T).T  # voxels × timepoints
+        # Predict: timepoints × voxels → transpose → voxels × timepoints
+        Y_pred = (X_test_task @ task_betas).T  # voxels × timepoints
 
         # Compute R²
         r2 = compute_r2(test_data_masked, Y_pred)
