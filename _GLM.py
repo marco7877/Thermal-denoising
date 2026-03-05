@@ -19,6 +19,31 @@ warnings.filterwarnings('ignore')
 # Utilities
 # ============================================================
 
+def percent_change_scaling(data, mask_img):
+    """
+    Apply percent change scaling to match GLM's signal_scaling='psc'
+    This is (x - mean)/mean * 100
+    """
+    mask_data = mask_img.get_fdata().astype(bool)
+    
+    # Reshape to voxels × time
+    original_shape = data.shape
+    data_reshaped = data.reshape(-1, original_shape[-1])
+    mask_flat = mask_data.ravel()
+    
+    # Compute mean for each voxel
+    voxel_means = np.mean(data_reshaped[mask_flat, :], axis=1, keepdims=True)
+    
+    # Avoid division by zero
+    voxel_means = np.where(np.abs(voxel_means) < 1e-6, 1, voxel_means)
+    
+    # Apply percent change scaling to masked voxels
+    data_scaled_reshaped = np.zeros_like(data_reshaped)
+    data_scaled_reshaped[mask_flat, :] = (data_reshaped[mask_flat, :] - voxel_means) / voxel_means * 100
+    
+    return data_scaled_reshaped.reshape(original_shape)
+
+
 def load_and_preprocess_runs(nii_files, mask_img):
     """
     Load all runs and return with their number of timepoints
@@ -255,6 +280,12 @@ def run_cv(
         print(f"  Concatenating {len(train_imgs)} training runs...")
         train_imgs_concat = concat_imgs(train_imgs)
         
+        # Apply percent change scaling to training data
+        print(f"  Applying percent change scaling to training data...")
+        train_data = get_data(train_imgs_concat)
+        train_data_scaled = percent_change_scaling(train_data, mask_img)
+        train_img_scaled = new_img_like(train_imgs_concat, train_data_scaled)
+        
         # Create proper block-diagonal design matrix with run-specific nuisance regressors
         print(f"  Creating block-diagonal design matrix...")
         
@@ -281,22 +312,22 @@ def run_cv(
         print(f"    Training design matrix shape: {train_design_matrix.shape}")
         print(f"    Number of regressors: {train_design_matrix.shape[1]}")
         
-        # Fit GLM
+        # Fit GLM with signal_scaling=False since we already applied percent change
         print(f"  Fitting GLM on training data...")
-        print(f"    signal_scaling='psc' - converts to percent change")
+        print(f"    signal_scaling=False - data already in percent change")
         print(f"    standardize=True - z-scores design matrix")
         
         fmri_glm = FirstLevelModel(
             t_r=tr,
             mask_img=mask_img,
             standardize=True,
-            signal_scaling='psc',
+            signal_scaling=False,  # CRITICAL: Data already in percent change
             hrf_model=hrf_model,
             minimize_memory=True,
             verbose=0
         )
         
-        fmri_glm = fmri_glm.fit(train_imgs_concat, design_matrices=train_design_matrix)
+        fmri_glm = fmri_glm.fit(train_img_scaled, design_matrices=train_design_matrix)
         
         # Extract task betas (first n_task_regressors)
         contrast_matrix = np.zeros((n_task_regressors, train_design_matrix.shape[1]))
@@ -326,6 +357,12 @@ def run_cv(
         
         print(f"  Concatenating {len(test_imgs)} test runs...")
         test_imgs_concat = concat_imgs(test_imgs)
+        
+        # Apply percent change scaling to test data
+        print(f"  Applying percent change scaling to test data...")
+        test_data = get_data(test_imgs_concat)
+        test_data_scaled = percent_change_scaling(test_data, mask_img)
+        test_img_scaled = new_img_like(test_imgs_concat, test_data_scaled)
         
         # Create test design matrix with run-specific nuisance regressors
         test_design_blocks = []
@@ -357,10 +394,10 @@ def run_cv(
         # Clean test data by regressing out nuisance
         print(f"  Regressing out nuisance regressors...")
         test_imgs_cleaned = clean_img(
-            test_imgs_concat,
+            test_img_scaled,  # Use scaled data
             confounds=confounds_df,
             detrend=False,
-            standardize=False,
+            standardize=False,  # Keep percent change scale
             t_r=tr
         )
         
