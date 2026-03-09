@@ -19,10 +19,10 @@ warnings.filterwarnings('ignore')
 # Utilities
 # ============================================================
 
-def percent_change_scaling(data, mask_img):
+def percent_change_scaling(data, mask_img, debug=False):
     """
-    Apply percent change scaling to match GLM's signal_scaling='psc'
-    This is (x - mean)/mean * 100
+    Apply percent change scaling: (x - mean)/mean * 100
+    With extensive debugging
     """
     mask_data = mask_img.get_fdata().astype(bool)
     
@@ -31,17 +31,69 @@ def percent_change_scaling(data, mask_img):
     data_reshaped = data.reshape(-1, original_shape[-1])
     mask_flat = mask_data.ravel()
     
+    # Get masked data
+    masked_data = data_reshaped[mask_flat, :]
+    
+    if debug:
+        print(f"\n    DEBUG - Percent Change Scaling:")
+        print(f"      Original data shape: {original_shape}")
+        print(f"      Masked data shape: {masked_data.shape}")
+        print(f"      Masked data range: [{np.min(masked_data):.2f}, {np.max(masked_data):.2f}]")
+        print(f"      Masked data mean: {np.mean(masked_data):.2f}")
+        print(f"      Masked data std: {np.std(masked_data):.2f}")
+    
     # Compute mean for each voxel
-    voxel_means = np.mean(data_reshaped[mask_flat, :], axis=1, keepdims=True)
+    voxel_means = np.mean(masked_data, axis=1, keepdims=True)
+    
+    if debug:
+        print(f"      Voxel means range: [{np.min(voxel_means):.2f}, {np.max(voxel_means):.2f}]")
+        print(f"      Voxel means mean: {np.mean(voxel_means):.2f}")
     
     # Avoid division by zero
     voxel_means = np.where(np.abs(voxel_means) < 1e-6, 1, voxel_means)
     
     # Apply percent change scaling to masked voxels
+    masked_pc = (masked_data - voxel_means) / voxel_means * 100
+    
+    if debug:
+        print(f"      Percent change range: [{np.min(masked_pc):.2f}, {np.max(masked_pc):.2f}]")
+        print(f"      Percent change mean: {np.mean(masked_pc):.2f}")
+        print(f"      Percent change std: {np.std(masked_pc):.2f}")
+    
+    # Put back into full array
     data_scaled_reshaped = np.zeros_like(data_reshaped)
-    data_scaled_reshaped[mask_flat, :] = (data_reshaped[mask_flat, :] - voxel_means) / voxel_means * 100
+    data_scaled_reshaped[mask_flat, :] = masked_pc
     
     return data_scaled_reshaped.reshape(original_shape)
+
+
+def zscore_design_matrix(design_matrix, debug=False):
+    """
+    Manually z-score the design matrix to match GLM's standardize=True
+    Also returns the means and stds for later use
+    """
+    design_scaled = design_matrix.copy()
+    means = {}
+    stds = {}
+    
+    for col in design_scaled.columns:
+        mean = design_scaled[col].mean()
+        std = design_scaled[col].std()
+        means[col] = mean
+        stds[col] = std
+        
+        if std > 0:
+            design_scaled[col] = (design_scaled[col] - mean) / std
+        else:
+            design_scaled[col] = 0  # Constant column
+    
+    if debug:
+        print(f"\n    DEBUG - Z-scoring design matrix:")
+        print(f"      Original range: [{np.min(design_matrix.values):.4f}, {np.max(design_matrix.values):.4f}]")
+        print(f"      Z-scored range: [{np.min(design_scaled.values):.4f}, {np.max(design_scaled.values):.4f}]")
+        print(f"      First few columns means after z-scoring: {[design_scaled[col].mean() for col in design_scaled.columns[:3]]}")
+    
+    return design_scaled, means, stds
 
 
 def load_and_preprocess_runs(nii_files, mask_img):
@@ -126,6 +178,7 @@ def load_design_matrices(events_files, run_timepoints, n_task_regressors, permut
             print(f"    Columns: {df.columns.tolist()}")
             print(f"    Task regressors (first {n_task_regressors}): {df.columns[:n_task_regressors].tolist()}")
             print(f"    Nuisance regressors: {df.columns[n_task_regressors:].tolist()}")
+            print(f"    Task regressor range: [{np.min(df.values[:, :n_task_regressors]):.4f}, {np.max(df.values[:, :n_task_regressors]):.4f}]")
 
     # Print summary
     print(f"\n  Summary of design matrix rows:")
@@ -157,6 +210,7 @@ def compute_r2_multiple_methods(y_true, y_pred, mask):
     
     # Additional diagnostics
     neg_count_1minus = 0
+    neg_count_sklearn = 0
     
     for v in range(n_voxels):
         y_t = y_true_valid[v, :]
@@ -175,6 +229,8 @@ def compute_r2_multiple_methods(y_true, y_pred, mask):
         
         # Method 3: sklearn's r2_score
         r2_sklearn[v] = r2_score(y_t, y_p)
+        if r2_sklearn[v] < 0:
+            neg_count_sklearn += 1
     
     # Create full 3D maps
     r2_corr_full = np.zeros(y_true.shape[:-1], dtype=np.float32)
@@ -207,6 +263,7 @@ def compute_r2_multiple_methods(y_true, y_pred, mask):
     print(f"      Std:  {np.std(r2_sklearn):.6f}")
     print(f"      Min:  {np.min(r2_sklearn):.6f}")
     print(f"      Max:  {np.max(r2_sklearn):.6f}")
+    print(f"      Negative R² voxels: {neg_count_sklearn}/{n_voxels} ({100*neg_count_sklearn/n_voxels:.2f}%)")
     
     print(f"\n    Cross-method comparisons:")
     print(f"      Correlation between Method 1 and 2: {np.corrcoef(r2_corr, r2_1minus)[0,1]:.6f}")
@@ -283,7 +340,7 @@ def run_cv(
         # Apply percent change scaling to training data
         print(f"  Applying percent change scaling to training data...")
         train_data = get_data(train_imgs_concat)
-        train_data_scaled = percent_change_scaling(train_data, mask_img)
+        train_data_scaled = percent_change_scaling(train_data, mask_img, debug=True)
         train_img_scaled = new_img_like(train_imgs_concat, train_data_scaled)
         
         # Create proper block-diagonal design matrix with run-specific nuisance regressors
@@ -311,6 +368,7 @@ def run_cv(
         
         print(f"    Training design matrix shape: {train_design_matrix.shape}")
         print(f"    Number of regressors: {train_design_matrix.shape[1]}")
+        print(f"    Training design matrix range: [{np.min(train_design_matrix.values):.4f}, {np.max(train_design_matrix.values):.4f}]")
         
         # Fit GLM with signal_scaling=False since we already applied percent change
         print(f"  Fitting GLM on training data...")
@@ -341,6 +399,8 @@ def run_cv(
         )
         betas = get_data(betas_img).astype(np.float32)
         print(f"    Betas shape: {betas.shape}")
+        print(f"    Betas range: [{np.min(betas):.4f}, {np.max(betas):.4f}]")
+        print(f"    Betas mean: {np.mean(betas):.4f}")
         
         # --- TESTING ---
         print(f"\n  --- Testing Phase ---")
@@ -361,7 +421,7 @@ def run_cv(
         # Apply percent change scaling to test data
         print(f"  Applying percent change scaling to test data...")
         test_data = get_data(test_imgs_concat)
-        test_data_scaled = percent_change_scaling(test_data, mask_img)
+        test_data_scaled = percent_change_scaling(test_data, mask_img, debug=True)
         test_img_scaled = new_img_like(test_imgs_concat, test_data_scaled)
         
         # Create test design matrix with run-specific nuisance regressors
@@ -381,9 +441,45 @@ def run_cv(
         test_design_matrix = pd.concat(test_design_blocks, axis=0, ignore_index=True)
         test_design_matrix = test_design_matrix.fillna(0)
         print(f"    Test design matrix shape: {test_design_matrix.shape}")
+        print(f"    Test design matrix range: [{np.min(test_design_matrix.values):.4f}, {np.max(test_design_matrix.values):.4f}]")
+        
+        # CRITICAL: For prediction, we need to use the SAME z-scoring that was applied during training
+        # Since the GLM was fit with standardize=True, the betas correspond to z-scored regressors
+        # So we need to z-score the test task regressors using the means and stds from training
+        
+        print(f"  Z-scoring test task regressors for prediction...")
+        
+        # First, get the task regressors from the test design (without z-scoring)
+        test_task_regressors_raw = test_design_matrix.values[:, :n_task_regressors].astype(np.float32)
+        
+        # We need the means and stds from the training task regressors
+        # Since we don't have them stored, we can estimate them from the training design
+        train_task_means = []
+        train_task_stds = []
+        for i in range(n_task_regressors):
+            train_task_col = train_design_matrix.values[:, i]
+            train_task_means.append(np.mean(train_task_col))
+            train_task_stds.append(np.std(train_task_col))
+        
+        print(f"    Training task regressor stats:")
+        for i in range(n_task_regressors):
+            print(f"      Task {i}: mean={train_task_means[i]:.4f}, std={train_task_stds[i]:.4f}")
+        
+        # Z-score the test task regressors using training stats
+        test_task_regressors_zscored = np.zeros_like(test_task_regressors_raw)
+        for i in range(n_task_regressors):
+            if train_task_stds[i] > 0:
+                test_task_regressors_zscored[:, i] = (test_task_regressors_raw[:, i] - train_task_means[i]) / train_task_stds[i]
+            else:
+                test_task_regressors_zscored[:, i] = 0
+        
+        print(f"    Raw task regressors range: [{np.min(test_task_regressors_raw):.4f}, {np.max(test_task_regressors_raw):.4f}]")
+        print(f"    Z-scored task regressors range: [{np.min(test_task_regressors_zscored):.4f}, {np.max(test_task_regressors_zscored):.4f}]")
         
         # Extract nuisance regressors for cleaning
         nuisance_regressors = test_design_matrix.values[:, n_task_regressors:].astype(np.float32)
+        print(f"    Nuisance regressors shape: {nuisance_regressors.shape}")
+        print(f"    Nuisance regressors range: [{np.min(nuisance_regressors):.4f}, {np.max(nuisance_regressors):.4f}]")
         
         # Create confounds DataFrame
         confounds_df = pd.DataFrame(
@@ -402,9 +498,15 @@ def run_cv(
         )
         
         test_data_cleaned = get_data(test_imgs_cleaned).astype(np.float32)
+        print(f"    Cleaned test data range: [{np.min(test_data_cleaned):.2f}, {np.max(test_data_cleaned):.2f}]")
+        print(f"    Cleaned test data mean: {np.mean(test_data_cleaned):.2f}")
+        print(f"    Cleaned test data std: {np.std(test_data_cleaned):.2f}")
         
-        # Get task regressors for prediction (first n_task_regressors)
-        test_task_regressors = test_design_matrix.values[:, :n_task_regressors].astype(np.float32)
+        # Check percentiles to identify outliers
+        test_data_masked_temp = test_data_cleaned[mask_data]
+        percentiles = np.percentile(test_data_masked_temp, [1, 5, 50, 95, 99])
+        print(f"    Cleaned data percentiles: 1%={percentiles[0]:.2f}, 5%={percentiles[1]:.2f}, "
+              f"50%={percentiles[2]:.2f}, 95%={percentiles[3]:.2f}, 99%={percentiles[4]:.2f}")
         
         # Reshape for prediction
         betas_reshaped = betas.reshape(-1, n_task_regressors)
@@ -414,12 +516,20 @@ def run_cv(
         test_data_reshaped = test_data_cleaned.reshape(-1, test_data_cleaned.shape[-1])
         test_data_masked = test_data_reshaped[mask_flat, :]
         
-        # Predict by summing task contributions
-        print(f"  Predicting test time series...")
-        predicted = betas_masked @ test_task_regressors.T
+        # Predict using Z-SCORED task regressors (to match training)
+        print(f"  Predicting test time series with z-scored task regressors...")
+        predicted = betas_masked @ test_task_regressors_zscored.T
         
         print(f"    Predicted range: [{np.min(predicted):.4f}, {np.max(predicted):.4f}]")
+        print(f"    Predicted mean: {np.mean(predicted):.4f}")
+        print(f"    Predicted std: {np.std(predicted):.4f}")
         print(f"    Cleaned data range: [{np.min(test_data_masked):.4f}, {np.max(test_data_masked):.4f}]")
+        print(f"    Cleaned data mean: {np.mean(test_data_masked):.4f}")
+        print(f"    Cleaned data std: {np.std(test_data_masked):.4f}")
+        
+        # Scale comparison
+        scale_ratio = np.std(predicted) / (np.std(test_data_masked) + 1e-8)
+        print(f"    Scale ratio (predicted/actual): {scale_ratio:.4f}")
         
         # Compute R²
         print(f"  Computing R²...")
@@ -430,9 +540,9 @@ def run_cv(
         test_data_4d[mask_data, :] = test_data_masked
         predicted_4d[mask_data, :] = predicted
         
-        r2_map, _, _ = compute_r2_multiple_methods(test_data_4d, predicted_4d, mask_data)
+        r2_map, r2_1minus, r2_sklearn = compute_r2_multiple_methods(test_data_4d, predicted_4d, mask_data)
         
-        # Accumulate results
+        # Accumulate results (using squared correlation as primary)
         r2_sum += r2_map
         r2_sq_sum += r2_map ** 2
 
