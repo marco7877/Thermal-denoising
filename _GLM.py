@@ -36,7 +36,7 @@ def percent_change_scaling_per_run(img, mask_img, debug=False):
         print(f"\n    DEBUG - Percent Change Scaling (per run):")
         print(f"      Original data shape: {original_shape}")
         print(f"      Original data range: [{np.min(data):.2f}, {np.max(data):.2f}]")
-        print(f"      Original data mean: {np.mean(data):.2f}")
+        print(f"      Original data mean (all voxels+time): {np.mean(data):.2f}")
     
     # Reshape to voxels × time
     n_voxels = np.prod(original_shape[:-1])
@@ -48,27 +48,37 @@ def percent_change_scaling_per_run(img, mask_img, debug=False):
     
     if debug and masked_data.size > 0:
         print(f"      Masked data shape: {masked_data.shape}")
-        print(f"      Masked data range: [{np.min(masked_data):.2f}, {np.max(masked_data):.2f}]")
-        print(f"      Masked data mean: {np.mean(masked_data):.2f}")
+        print(f"      Masked data range (all voxels+time): [{np.min(masked_data):.2f}, {np.max(masked_data):.2f}]")
+        print(f"      Masked data mean (all voxels+time): {np.mean(masked_data):.2f}")
     
     if masked_data.size > 0:
         # Compute mean for each voxel WITHIN THIS RUN ONLY
         voxel_means = np.mean(masked_data, axis=1, keepdims=True)
         
         if debug:
-            print(f"      Voxel means range: [{np.min(voxel_means):.2f}, {np.max(voxel_means):.2f}]")
-            print(f"      Voxel means mean: {np.mean(voxel_means):.2f}")
+            print(f"      Voxel means range (per voxel baseline): [{np.min(voxel_means):.2f}, {np.max(voxel_means):.2f}]")
+            print(f"      Average of voxel means: {np.mean(voxel_means):.2f}")
         
         # Avoid division by zero
-        voxel_means = np.where(np.abs(voxel_means) < 1e-6, 1, voxel_means)
+        voxel_means_safe = np.where(np.abs(voxel_means) < 1e-6, 1, voxel_means)
         
         # Apply percent change scaling to masked voxels
-        masked_pc = (masked_data - voxel_means) / voxel_means * 100
+        masked_pc = (masked_data - voxel_means_safe) / voxel_means_safe * 100
+        
+        # Calculate per-voxel means after transformation
+        per_voxel_pc_means = np.mean(masked_pc, axis=1)
         
         if debug:
-            print(f"      Percent change range: [{np.min(masked_pc):.2f}, {np.max(masked_pc):.2f}]")
-            print(f"      Percent change mean: {np.mean(masked_pc):.2f}")
-            print(f"      Percent change std: {np.std(masked_pc):.2f}")
+            print(f"      Mean per voxel shape: {voxel_means.shape}")
+            print(f"      Percent change range (all voxels+time): [{np.min(masked_pc):.2f}, {np.max(masked_pc):.2f}]")
+            print(f"      Percent change mean (all voxels+time): {np.mean(masked_pc):.2f}")
+            print(f"      Per-voxel percent change means - range: [{np.min(per_voxel_pc_means):.2f}, {np.max(per_voxel_pc_means):.2f}]")
+            print(f"      Per-voxel percent change means - average: {np.mean(per_voxel_pc_means):.2f} (should be 0)")
+            
+            # This is the key check - the average of per-voxel means should be 0
+            if abs(np.mean(per_voxel_pc_means)) > 0.01:
+                print(f"      ERROR: Per-voxel means average is {np.mean(per_voxel_pc_means):.2f}, should be 0!")
+                print(f"      This indicates a bug in the percent change calculation")
         
         # Put back into full array
         data_pc_reshaped = np.zeros_like(data_reshaped)
@@ -80,8 +90,6 @@ def percent_change_scaling_per_run(img, mask_img, debug=False):
     data_pc = data_pc_reshaped.reshape(original_shape).astype(np.float32)
     
     return new_img_like(img, data_pc)
-
-
 def load_and_preprocess_runs(nii_files, mask_img, debug=False):
     """
     Load all runs and apply percent change scaling PER RUN
