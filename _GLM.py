@@ -19,89 +19,76 @@ warnings.filterwarnings('ignore')
 # Utilities
 # ============================================================
 
-def percent_change_scaling(data, mask_img, debug=False):
+def percent_change_scaling_per_run(img, mask_img, debug=False):
     """
-    Apply percent change scaling: (x - mean)/mean * 100
-    With extensive debugging
+    Apply percent change scaling PER RUN: (x - mean)/mean * 100
+    This is done independently for each run before concatenation
     """
+    # Get data as numpy array
+    data = get_data(img).astype(np.float64)
     mask_data = mask_img.get_fdata().astype(bool)
     
-    # Reshape to voxels × time
+    # Get original shape
     original_shape = data.shape
-    data_reshaped = data.reshape(-1, original_shape[-1])
+    n_timepoints = original_shape[-1]
+    
+    if debug:
+        print(f"\n    DEBUG - Percent Change Scaling (per run):")
+        print(f"      Original data shape: {original_shape}")
+        print(f"      Original data range: [{np.min(data):.2f}, {np.max(data):.2f}]")
+        print(f"      Original data mean: {np.mean(data):.2f}")
+    
+    # Reshape to voxels × time
+    n_voxels = np.prod(original_shape[:-1])
+    data_reshaped = data.reshape(n_voxels, n_timepoints)
     mask_flat = mask_data.ravel()
     
     # Get masked data
     masked_data = data_reshaped[mask_flat, :]
     
-    if debug:
-        print(f"\n    DEBUG - Percent Change Scaling:")
-        print(f"      Original data shape: {original_shape}")
+    if debug and masked_data.size > 0:
         print(f"      Masked data shape: {masked_data.shape}")
         print(f"      Masked data range: [{np.min(masked_data):.2f}, {np.max(masked_data):.2f}]")
         print(f"      Masked data mean: {np.mean(masked_data):.2f}")
-        print(f"      Masked data std: {np.std(masked_data):.2f}")
     
-    # Compute mean for each voxel
-    voxel_means = np.mean(masked_data, axis=1, keepdims=True)
-    
-    if debug:
-        print(f"      Voxel means range: [{np.min(voxel_means):.2f}, {np.max(voxel_means):.2f}]")
-        print(f"      Voxel means mean: {np.mean(voxel_means):.2f}")
-    
-    # Avoid division by zero
-    voxel_means = np.where(np.abs(voxel_means) < 1e-6, 1, voxel_means)
-    
-    # Apply percent change scaling to masked voxels
-    masked_pc = (masked_data - voxel_means) / voxel_means * 100
-    
-    if debug:
-        print(f"      Percent change range: [{np.min(masked_pc):.2f}, {np.max(masked_pc):.2f}]")
-        print(f"      Percent change mean: {np.mean(masked_pc):.2f}")
-        print(f"      Percent change std: {np.std(masked_pc):.2f}")
-    
-    # Put back into full array
-    data_scaled_reshaped = np.zeros_like(data_reshaped)
-    data_scaled_reshaped[mask_flat, :] = masked_pc
-    
-    return data_scaled_reshaped.reshape(original_shape)
-
-
-def zscore_design_matrix(design_matrix, debug=False):
-    """
-    Manually z-score the design matrix to match GLM's standardize=True
-    Also returns the means and stds for later use
-    """
-    design_scaled = design_matrix.copy()
-    means = {}
-    stds = {}
-    
-    for col in design_scaled.columns:
-        mean = design_scaled[col].mean()
-        std = design_scaled[col].std()
-        means[col] = mean
-        stds[col] = std
+    if masked_data.size > 0:
+        # Compute mean for each voxel WITHIN THIS RUN ONLY
+        voxel_means = np.mean(masked_data, axis=1, keepdims=True)
         
-        if std > 0:
-            design_scaled[col] = (design_scaled[col] - mean) / std
-        else:
-            design_scaled[col] = 0  # Constant column
+        if debug:
+            print(f"      Voxel means range: [{np.min(voxel_means):.2f}, {np.max(voxel_means):.2f}]")
+            print(f"      Voxel means mean: {np.mean(voxel_means):.2f}")
+        
+        # Avoid division by zero
+        voxel_means = np.where(np.abs(voxel_means) < 1e-6, 1, voxel_means)
+        
+        # Apply percent change scaling to masked voxels
+        masked_pc = (masked_data - voxel_means) / voxel_means * 100
+        
+        if debug:
+            print(f"      Percent change range: [{np.min(masked_pc):.2f}, {np.max(masked_pc):.2f}]")
+            print(f"      Percent change mean: {np.mean(masked_pc):.2f}")
+            print(f"      Percent change std: {np.std(masked_pc):.2f}")
+        
+        # Put back into full array
+        data_pc_reshaped = np.zeros_like(data_reshaped)
+        data_pc_reshaped[mask_flat, :] = masked_pc
+    else:
+        data_pc_reshaped = data_reshaped
     
-    if debug:
-        print(f"\n    DEBUG - Z-scoring design matrix:")
-        print(f"      Original range: [{np.min(design_matrix.values):.4f}, {np.max(design_matrix.values):.4f}]")
-        print(f"      Z-scored range: [{np.min(design_scaled.values):.4f}, {np.max(design_scaled.values):.4f}]")
-        print(f"      First few columns means after z-scoring: {[design_scaled[col].mean() for col in design_scaled.columns[:3]]}")
+    # Reshape back to original 4D
+    data_pc = data_pc_reshaped.reshape(original_shape).astype(np.float32)
     
-    return design_scaled, means, stds
+    return new_img_like(img, data_pc)
 
 
-def load_and_preprocess_runs(nii_files, mask_img):
+def load_and_preprocess_runs(nii_files, mask_img, debug=False):
     """
-    Load all runs and return with their number of timepoints
+    Load all runs and apply percent change scaling PER RUN
+    This is critical - each run is scaled independently before any concatenation
     """
     print("\n" + "="*60)
-    print("STEP 1: Loading runs")
+    print("STEP 1: Loading runs and applying per-run percent change scaling")
     print("="*60)
     
     all_runs_imgs = []
@@ -125,9 +112,22 @@ def load_and_preprocess_runs(nii_files, mask_img):
         # Get number of timepoints
         n_timepoints = img.shape[-1]
         run_timepoints.append(n_timepoints)
-        all_runs_imgs.append(img)
         
-        print(f"    Shape: {img.shape}, Timepoints: {n_timepoints}")
+        # CRITICAL: Apply percent change scaling PER RUN, before any concatenation
+        print(f"    Applying percent change scaling (per run)...")
+        img_pc = percent_change_scaling_per_run(img, mask_img, debug=debug)
+        all_runs_imgs.append(img_pc)
+        
+        print(f"    Shape: {img_pc.shape}, Timepoints: {n_timepoints}")
+        
+        # Quick check of scaled data
+        if debug:
+            data_sample = get_data(img_pc)[mask_img.get_fdata().astype(bool)]
+            if len(data_sample) > 0:
+                print(f"    Scaled data stats (within mask):")
+                print(f"      Range: [{np.min(data_sample):.2f}, {np.max(data_sample):.2f}]")
+                print(f"      Mean: {np.mean(data_sample):.2f}")
+                print(f"      Std: {np.std(data_sample):.2f}")
     
     # Print summary
     print(f"\n  Summary of run timepoints:")
@@ -287,13 +287,14 @@ def run_cv(
     splits,
     random_state,
     permute=False,
+    debug=False,
 ):
     """
-    Run cross-validated GLM with proper block-diagonal design matrices
+    Run cross-validated GLM with per-run percent change scaling
     """
     
-    # Step 1: Load all runs and get timepoints
-    all_runs_imgs, reference_img, run_timepoints = load_and_preprocess_runs(nii_files, mask_img)
+    # Step 1: Load all runs and apply per-run percent change scaling
+    all_runs_imgs, reference_img, run_timepoints = load_and_preprocess_runs(nii_files, mask_img, debug=debug)
     
     # Load design matrices with timepoint alignment
     designs = load_design_matrices(
@@ -323,6 +324,7 @@ def run_cv(
         
         # --- TRAINING ---
         print(f"\n  --- Training Phase ---")
+        # Get training images (ALREADY in percent change from per-run scaling)
         train_imgs = [all_runs_imgs[i] for i in train_idx]
         train_designs = [designs[i] for i in train_idx]
         
@@ -334,14 +336,13 @@ def run_cv(
         if train_total_tp != train_design_total_tp:
             raise ValueError(f"Training timepoint mismatch! fMRI={train_total_tp}, Design={train_design_total_tp}")
         
+        # Concatenate training images (already scaled per run)
         print(f"  Concatenating {len(train_imgs)} training runs...")
         train_imgs_concat = concat_imgs(train_imgs)
-        
-        # Apply percent change scaling to training data
-        print(f"  Applying percent change scaling to training data...")
         train_data = get_data(train_imgs_concat)
-        train_data_scaled = percent_change_scaling(train_data, mask_img, debug=True)
-        train_img_scaled = new_img_like(train_imgs_concat, train_data_scaled)
+        print(f"    Concatenated training data shape: {train_data.shape}")
+        print(f"    Concatenated training data range: [{np.min(train_data):.2f}, {np.max(train_data):.2f}]")
+        print(f"    Concatenated training data mean: {np.mean(train_data):.2f}")
         
         # Create proper block-diagonal design matrix with run-specific nuisance regressors
         print(f"  Creating block-diagonal design matrix...")
@@ -385,7 +386,7 @@ def run_cv(
             verbose=0
         )
         
-        fmri_glm = fmri_glm.fit(train_img_scaled, design_matrices=train_design_matrix)
+        fmri_glm = fmri_glm.fit(train_imgs_concat, design_matrices=train_design_matrix)
         
         # Extract task betas (first n_task_regressors)
         contrast_matrix = np.zeros((n_task_regressors, train_design_matrix.shape[1]))
@@ -402,8 +403,21 @@ def run_cv(
         print(f"    Betas range: [{np.min(betas):.4f}, {np.max(betas):.4f}]")
         print(f"    Betas mean: {np.mean(betas):.4f}")
         
+        # Store training task regressor statistics for later z-scoring of test data
+        train_task_means = []
+        train_task_stds = []
+        for i in range(n_task_regressors):
+            train_task_col = train_design_matrix.values[:, i]
+            train_task_means.append(np.mean(train_task_col))
+            train_task_stds.append(np.std(train_task_col))
+        
+        print(f"    Training task regressor stats:")
+        for i in range(n_task_regressors):
+            print(f"      Task {i}: mean={train_task_means[i]:.4f}, std={train_task_stds[i]:.4f}")
+        
         # --- TESTING ---
         print(f"\n  --- Testing Phase ---")
+        # Get test images (ALREADY in percent change from per-run scaling)
         test_imgs = [all_runs_imgs[i] for i in test_idx]
         test_designs = [designs[i] for i in test_idx]
         
@@ -415,14 +429,13 @@ def run_cv(
         if test_total_tp != test_design_total_tp:
             raise ValueError(f"Testing timepoint mismatch! fMRI={test_total_tp}, Design={test_design_total_tp}")
         
+        # Concatenate test images (already scaled per run)
         print(f"  Concatenating {len(test_imgs)} test runs...")
         test_imgs_concat = concat_imgs(test_imgs)
-        
-        # Apply percent change scaling to test data
-        print(f"  Applying percent change scaling to test data...")
         test_data = get_data(test_imgs_concat)
-        test_data_scaled = percent_change_scaling(test_data, mask_img, debug=True)
-        test_img_scaled = new_img_like(test_imgs_concat, test_data_scaled)
+        print(f"    Concatenated test data shape: {test_data.shape}")
+        print(f"    Concatenated test data range: [{np.min(test_data):.2f}, {np.max(test_data):.2f}]")
+        print(f"    Concatenated test data mean: {np.mean(test_data):.2f}")
         
         # Create test design matrix with run-specific nuisance regressors
         test_design_blocks = []
@@ -443,39 +456,6 @@ def run_cv(
         print(f"    Test design matrix shape: {test_design_matrix.shape}")
         print(f"    Test design matrix range: [{np.min(test_design_matrix.values):.4f}, {np.max(test_design_matrix.values):.4f}]")
         
-        # CRITICAL: For prediction, we need to use the SAME z-scoring that was applied during training
-        # Since the GLM was fit with standardize=True, the betas correspond to z-scored regressors
-        # So we need to z-score the test task regressors using the means and stds from training
-        
-        print(f"  Z-scoring test task regressors for prediction...")
-        
-        # First, get the task regressors from the test design (without z-scoring)
-        test_task_regressors_raw = test_design_matrix.values[:, :n_task_regressors].astype(np.float32)
-        
-        # We need the means and stds from the training task regressors
-        # Since we don't have them stored, we can estimate them from the training design
-        train_task_means = []
-        train_task_stds = []
-        for i in range(n_task_regressors):
-            train_task_col = train_design_matrix.values[:, i]
-            train_task_means.append(np.mean(train_task_col))
-            train_task_stds.append(np.std(train_task_col))
-        
-        print(f"    Training task regressor stats:")
-        for i in range(n_task_regressors):
-            print(f"      Task {i}: mean={train_task_means[i]:.4f}, std={train_task_stds[i]:.4f}")
-        
-        # Z-score the test task regressors using training stats
-        test_task_regressors_zscored = np.zeros_like(test_task_regressors_raw)
-        for i in range(n_task_regressors):
-            if train_task_stds[i] > 0:
-                test_task_regressors_zscored[:, i] = (test_task_regressors_raw[:, i] - train_task_means[i]) / train_task_stds[i]
-            else:
-                test_task_regressors_zscored[:, i] = 0
-        
-        print(f"    Raw task regressors range: [{np.min(test_task_regressors_raw):.4f}, {np.max(test_task_regressors_raw):.4f}]")
-        print(f"    Z-scored task regressors range: [{np.min(test_task_regressors_zscored):.4f}, {np.max(test_task_regressors_zscored):.4f}]")
-        
         # Extract nuisance regressors for cleaning
         nuisance_regressors = test_design_matrix.values[:, n_task_regressors:].astype(np.float32)
         print(f"    Nuisance regressors shape: {nuisance_regressors.shape}")
@@ -490,7 +470,7 @@ def run_cv(
         # Clean test data by regressing out nuisance
         print(f"  Regressing out nuisance regressors...")
         test_imgs_cleaned = clean_img(
-            test_img_scaled,  # Use scaled data
+            test_imgs_concat,  # Use already scaled data
             confounds=confounds_df,
             detrend=False,
             standardize=False,  # Keep percent change scale
@@ -504,9 +484,25 @@ def run_cv(
         
         # Check percentiles to identify outliers
         test_data_masked_temp = test_data_cleaned[mask_data]
-        percentiles = np.percentile(test_data_masked_temp, [1, 5, 50, 95, 99])
-        print(f"    Cleaned data percentiles: 1%={percentiles[0]:.2f}, 5%={percentiles[1]:.2f}, "
-              f"50%={percentiles[2]:.2f}, 95%={percentiles[3]:.2f}, 99%={percentiles[4]:.2f}")
+        if len(test_data_masked_temp) > 0:
+            percentiles = np.percentile(test_data_masked_temp, [1, 5, 50, 95, 99])
+            print(f"    Cleaned data percentiles: 1%={percentiles[0]:.2f}, 5%={percentiles[1]:.2f}, "
+                  f"50%={percentiles[2]:.2f}, 95%={percentiles[3]:.2f}, 99%={percentiles[4]:.2f}")
+        
+        # Get raw task regressors from test design
+        test_task_regressors_raw = test_design_matrix.values[:, :n_task_regressors].astype(np.float32)
+        
+        # CRITICAL: Z-score test task regressors using training statistics
+        # This is necessary because the GLM was fit with standardize=True
+        test_task_regressors_zscored = np.zeros_like(test_task_regressors_raw)
+        for i in range(n_task_regressors):
+            if train_task_stds[i] > 0:
+                test_task_regressors_zscored[:, i] = (test_task_regressors_raw[:, i] - train_task_means[i]) / train_task_stds[i]
+            else:
+                test_task_regressors_zscored[:, i] = 0
+        
+        print(f"    Raw task regressors range: [{np.min(test_task_regressors_raw):.4f}, {np.max(test_task_regressors_raw):.4f}]")
+        print(f"    Z-scored task regressors range: [{np.min(test_task_regressors_zscored):.4f}, {np.max(test_task_regressors_zscored):.4f}]")
         
         # Reshape for prediction
         betas_reshaped = betas.reshape(-1, n_task_regressors)
@@ -516,7 +512,7 @@ def run_cv(
         test_data_reshaped = test_data_cleaned.reshape(-1, test_data_cleaned.shape[-1])
         test_data_masked = test_data_reshaped[mask_flat, :]
         
-        # Predict using Z-SCORED task regressors (to match training)
+        # Predict using Z-SCORED task regressors
         print(f"  Predicting test time series with z-scored task regressors...")
         predicted = betas_masked @ test_task_regressors_zscored.T
         
@@ -570,7 +566,7 @@ def run_cv(
 # ============================================================
 
 def main():
-    parser = argparse.ArgumentParser(description="Cross-validated GLM")
+    parser = argparse.ArgumentParser(description="Cross-validated GLM with per-run percent change scaling")
     
     parser.add_argument("--nii_files", nargs="+", required=True,
                         help="List of NIfTI files (one per run)")
@@ -596,6 +592,8 @@ def main():
                         help="Prefix for output files")
     parser.add_argument("--only_permutations", action="store_true",
                         help="Only run permutations (skip real data)")
+    parser.add_argument("--debug", action="store_true",
+                        help="Enable debug output")
 
     args = parser.parse_args()
 
@@ -603,7 +601,7 @@ def main():
         raise ValueError(f"Number of NIfTI files ({len(args.nii_files)}) does not match number of event files ({len(args.events_files)})")
 
     print(f"\n{'='*60}")
-    print("CROSS-VALIDATED GLM")
+    print("CROSS-VALIDATED GLM WITH PER-RUN PERCENT CHANGE SCALING")
     print(f"{'='*60}")
     print(f"Input files: {len(args.nii_files)} runs")
     print(f"Parameters:")
@@ -612,6 +610,7 @@ def main():
     print(f"  HRF model: {args.hrf_model}")
     print(f"  Number of splits: {args.n_splits}")
     print(f"  Test size: {args.test_size*100:.0f}%")
+    print(f"  Debug mode: {args.debug}")
     print(f"{'='*60}\n")
 
     # Load mask
@@ -642,7 +641,8 @@ def main():
             args.hrf_model,
             splits,
             args.random_state,
-            permute=False
+            permute=False,
+            debug=args.debug,
         )
 
         # Save results
@@ -681,7 +681,8 @@ def main():
                 args.hrf_model,
                 splits,
                 args.random_state + p + 1,
-                permute=True
+                permute=True,
+                debug=args.debug,
             )
 
             if running_mean is None:
@@ -714,10 +715,3 @@ def main():
         del perm_mean, running_mean
         gc.collect()
 
-    print(f"\n{'='*60}")
-    print("DONE!")
-    print(f"{'='*60}\n")
-
-
-if __name__ == "__main__":
-    main()
