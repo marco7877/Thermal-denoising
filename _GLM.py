@@ -715,3 +715,10 @@ def main():
         del perm_mean, running_mean
         gc.collect()
 
+    print(f"\n{'='*60}")
+    print("DONE!")
+    print(f"{'='*60}\n")
+
+
+if __name__ == "__main__":
+    main()
