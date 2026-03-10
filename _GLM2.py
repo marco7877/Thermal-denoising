@@ -7,7 +7,7 @@ import pandas as pd
 
 from nilearn.masking import apply_mask, unmask
 from sklearn.model_selection import ShuffleSplit
-
+from nilearn.image import resample_to_img
 
 # --------------------------------------------------
 # Percent signal change (per run)
