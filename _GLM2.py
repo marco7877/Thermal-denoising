@@ -228,6 +228,7 @@ def main():
     args = parser.parse_args()
 
     mask_img = nib.load(args.mask)
+    mask_img = resample_to_img(mask_img, nib.load(args.nii_files[0]), interpolation='nearest')
 
     runs = load_runs(args.nii_files, mask_img)
     designs = load_designs(args.events_files)
