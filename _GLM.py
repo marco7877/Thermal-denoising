@@ -44,7 +44,7 @@ def percent_change_scaling_per_run(img, mask_img, debug=False):
     mask_flat = mask_data.ravel()
     
     # Get masked data
-    masked_data = data_reshaped[mask_flat, :]
+    masked_data = data_reshaped[mask_flat, :].copy()  # Make a copy to avoid reference issues
     
     if debug and masked_data.size > 0:
         print(f"      Masked data shape: {masked_data.shape}")
@@ -58,27 +58,42 @@ def percent_change_scaling_per_run(img, mask_img, debug=False):
         if debug:
             print(f"      Voxel means range (per voxel baseline): [{np.min(voxel_means):.2f}, {np.max(voxel_means):.2f}]")
             print(f"      Average of voxel means: {np.mean(voxel_means):.2f}")
+            print(f"      Mean per voxel shape: {voxel_means.shape}")
         
         # Avoid division by zero
         voxel_means_safe = np.where(np.abs(voxel_means) < 1e-6, 1, voxel_means)
         
         # Apply percent change scaling to masked voxels
+        # This is the key line - we need to broadcast correctly
         masked_pc = (masked_data - voxel_means_safe) / voxel_means_safe * 100
         
         # Calculate per-voxel means after transformation
         per_voxel_pc_means = np.mean(masked_pc, axis=1)
         
         if debug:
-            print(f"      Mean per voxel shape: {voxel_means.shape}")
             print(f"      Percent change range (all voxels+time): [{np.min(masked_pc):.2f}, {np.max(masked_pc):.2f}]")
             print(f"      Percent change mean (all voxels+time): {np.mean(masked_pc):.2f}")
             print(f"      Per-voxel percent change means - range: [{np.min(per_voxel_pc_means):.2f}, {np.max(per_voxel_pc_means):.2f}]")
             print(f"      Per-voxel percent change means - average: {np.mean(per_voxel_pc_means):.2f} (should be 0)")
             
+            # Check if all per-voxel means are the same (which would indicate a bug)
+            if np.std(per_voxel_pc_means) < 1e-6:
+                print(f"      ERROR: All per-voxel means are identical! This indicates a broadcasting bug.")
+                print(f"      First 5 per-voxel means: {per_voxel_pc_means[:5]}")
+            
             # This is the key check - the average of per-voxel means should be 0
             if abs(np.mean(per_voxel_pc_means)) > 0.01:
                 print(f"      ERROR: Per-voxel means average is {np.mean(per_voxel_pc_means):.2f}, should be 0!")
                 print(f"      This indicates a bug in the percent change calculation")
+                
+                # Let's debug by looking at a single voxel
+                test_voxel = 0
+                print(f"      Debug single voxel {test_voxel}:")
+                print(f"        Original data (first 5): {masked_data[test_voxel, :5]}")
+                print(f"        Voxel mean: {voxel_means[test_voxel, 0]:.2f}")
+                pc_test = (masked_data[test_voxel, :] - voxel_means[test_voxel, 0]) / voxel_means[test_voxel, 0] * 100
+                print(f"        Calculated PC (first 5): {pc_test[:5]}")
+                print(f"        Mean of PC for this voxel: {np.mean(pc_test):.4f}")
         
         # Put back into full array
         data_pc_reshaped = np.zeros_like(data_reshaped)
