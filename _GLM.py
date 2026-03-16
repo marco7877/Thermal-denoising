@@ -295,9 +295,164 @@ def compute_r2_multiple_methods(y_true, y_pred, mask):
     
     return r2_corr_full, r2_1minus_full, r2_sklearn_full
 
+# ============================================================
+# Single split function
+# ============================================================
+
+def run_single_split(train_imgs, test_imgs, train_designs, test_designs,
+                     mask_data, n_task_regressors, tr, hrf_model):
+    """
+    Run one CV split and return the R² map.
+    """
+    # Concatenate training images
+    train_imgs_concat = concat_imgs(train_imgs)
+    
+    # Create block-diagonal design matrix for training
+    train_design_blocks = []
+    for run_idx, design in enumerate(train_designs):
+        task_part = design.iloc[:, :n_task_regressors]
+        nuisance_part = design.iloc[:, n_task_regressors:]
+        rename_dict = {col: f"{col}_run{run_idx}" for col in nuisance_part.columns}
+        nuisance_part = nuisance_part.rename(columns=rename_dict)
+        run_design = pd.concat([task_part, nuisance_part], axis=1)
+        train_design_blocks.append(run_design)
+    train_design_matrix = pd.concat(train_design_blocks, axis=0, ignore_index=True).fillna(0)
+    
+    # Fit GLM
+    fmri_glm = FirstLevelModel(
+        t_r=tr,
+        mask_img=None,
+        standardize=True,
+        signal_scaling=False,
+        hrf_model=hrf_model,
+        minimize_memory=True
+    )
+    fmri_glm = fmri_glm.fit(train_imgs_concat, design_matrices=train_design_matrix)
+    
+    # Extract task betas
+    contrast_matrix = np.zeros((n_task_regressors, train_design_matrix.shape[1]))
+    for i in range(n_task_regressors):
+        contrast_matrix[i, i] = 1
+    betas_img = fmri_glm.compute_contrast(contrast_matrix, output_type='effect_size')
+    betas = get_data(betas_img).astype(np.float32)
+    
+    # Training task stats for z-scoring test regressors
+    train_task_means = [np.mean(train_design_matrix.values[:, i]) for i in range(n_task_regressors)]
+    train_task_stds = [np.std(train_design_matrix.values[:, i]) for i in range(n_task_regressors)]
+    
+    # --- Testing (using real test designs) ---
+    test_imgs_concat = concat_imgs(test_imgs)
+    
+    # Create test design matrix (nuisance renamed, but task part is real)
+    test_design_blocks = []
+    for run_idx, design in enumerate(test_designs):
+        task_part = design.iloc[:, :n_task_regressors]
+        nuisance_part = design.iloc[:, n_task_regressors:]
+        rename_dict = {col: f"{col}_run{run_idx}" for col in nuisance_part.columns}
+        nuisance_part = nuisance_part.rename(columns=rename_dict)
+        run_design = pd.concat([task_part, nuisance_part], axis=1)
+        test_design_blocks.append(run_design)
+    test_design_matrix = pd.concat(test_design_blocks, axis=0, ignore_index=True).fillna(0)
+    
+    # Regress out nuisance from test data
+    nuisance_regressors = test_design_matrix.values[:, n_task_regressors:].astype(np.float32)
+    confounds_df = pd.DataFrame(nuisance_regressors, columns=[f"nuisance_{i}" for i in range(nuisance_regressors.shape[1])])
+    test_imgs_cleaned = clean_img(test_imgs_concat, confounds=confounds_df, detrend=False, standardize=False, t_r=tr)
+    test_data_cleaned = get_data(test_imgs_cleaned).astype(np.float32)
+    
+    # Z-score test task regressors using training stats
+    test_task_regressors_raw = test_design_matrix.values[:, :n_task_regressors].astype(np.float32)
+    test_task_regressors_zscored = np.zeros_like(test_task_regressors_raw)
+    for i in range(n_task_regressors):
+        if train_task_stds[i] > 0:
+            test_task_regressors_zscored[:, i] = (test_task_regressors_raw[:, i] - train_task_means[i]) / train_task_stds[i]
+    
+    # Predict
+    betas_reshaped = betas.reshape(-1, n_task_regressors)
+    mask_flat = mask_data.ravel()
+    betas_masked = betas_reshaped[mask_flat, :]
+    test_data_reshaped = test_data_cleaned.reshape(-1, test_data_cleaned.shape[-1])
+    test_data_masked = test_data_reshaped[mask_flat, :]
+    predicted = betas_masked @ test_task_regressors_zscored.T
+    
+    # Compute R² map
+    r2_map = np.zeros(mask_data.shape, dtype=np.float32)
+    for v in range(test_data_masked.shape[0]):
+        y_t = test_data_masked[v, :]
+        y_p = predicted[v, :]
+        corr = np.corrcoef(y_t, y_p)[0, 1]
+        r2_map[mask_data][v] = corr ** 2 if not np.isnan(corr) else 0
+    
+    return r2_map
+
 
 # ============================================================
-# Cross-validation core
+# Optimized permutation function (permute training designs only)
+# ============================================================
+
+def run_permutations(
+    nii_files,
+    events_files,
+    mask_img,
+    n_task_regressors,
+    tr,
+    hrf_model,
+    splits,
+    n_permutations,
+    random_state,
+    debug=False,
+):
+    """
+    Run permutations by shuffling only the training design matrices.
+    Data is preprocessed once and reused.
+    """
+    # Preprocess all data once
+    all_runs_imgs, reference_img, run_timepoints = load_and_preprocess_runs(nii_files, mask_img, debug=debug)
+    designs = load_design_matrices(events_files, run_timepoints, n_task_regressors)
+    mask_data = mask_img.get_fdata().astype(bool)
+    
+    max_distribution = np.zeros(n_permutations, dtype=np.float32)
+    
+    for p in tqdm(range(n_permutations), desc="Permutations"):
+        rng = np.random.default_rng(random_state + p + 1)
+        r2_perm_sum = np.zeros(mask_data.shape, dtype=np.float32)
+        
+        for train_idx, test_idx in splits:
+            # Test data (unchanged)
+            test_imgs = [all_runs_imgs[i] for i in test_idx]
+            test_designs = [designs[i] for i in test_idx]
+            
+            # Training data (images unchanged, designs permuted)
+            train_imgs = [all_runs_imgs[i] for i in train_idx]
+            train_designs_orig = [designs[i] for i in train_idx]
+            
+            # Permute rows of each training design matrix
+            train_designs_perm = []
+            for design in train_designs_orig:
+                design_perm = design.sample(frac=1, random_state=rng).reset_index(drop=True)
+                train_designs_perm.append(design_perm)
+            
+            # Run the split
+            r2_map = run_single_split(
+                train_imgs, test_imgs,
+                train_designs_perm, test_designs,
+                mask_data, n_task_regressors, tr, hrf_model
+            )
+            r2_perm_sum += r2_map
+        
+        # Average over splits (if multiple splits per permutation)
+        r2_perm_mean = r2_perm_sum / len(splits)
+        max_distribution[p] = np.max(r2_perm_mean[mask_data])
+        
+        # Clean up
+        del r2_perm_sum, r2_perm_mean
+        gc.collect()
+    
+    return max_distribution
+
+
+# ============================================================
+# Real data CV (unchanged)
 # ============================================================
 
 def run_cv(
@@ -309,278 +464,50 @@ def run_cv(
     hrf_model,
     splits,
     random_state,
-    permute=False,
     debug=False,
 ):
     """
-    Run cross-validated GLM with per-run percent change scaling
+    Run cross-validation for real data (no permutation).
     """
-    
-    # Step 1: Load all runs and apply per-run percent change scaling
     all_runs_imgs, reference_img, run_timepoints = load_and_preprocess_runs(nii_files, mask_img, debug=debug)
-    
-    # Load design matrices with timepoint alignment
-    designs = load_design_matrices(
-        events_files,
-        run_timepoints,
-        n_task_regressors,
-        permute=permute,
-        seed=random_state,
-    )
-    
-    # Get mask data
+    designs = load_design_matrices(events_files, run_timepoints, n_task_regressors)
     mask_data = mask_img.get_fdata().astype(bool)
     mask_shape = mask_data.shape
-    print(f"\nMask has {np.sum(mask_data)} voxels")
     
-    # Store results
     r2_sum = np.zeros(mask_shape, dtype=np.float32)
     r2_sq_sum = np.zeros(mask_shape, dtype=np.float32)
-
+    
     for split_id, (train_idx, test_idx) in enumerate(splits):
-        
         print(f"\n{'='*60}")
-        print(f"STEP 3: Processing split {split_id + 1}/{len(splits)}")
+        print(f"Split {split_id + 1}/{len(splits)}")
         print(f"{'='*60}")
-        print(f"  Training runs: {train_idx}")
-        print(f"  Testing runs: {test_idx}")
         
-        # --- TRAINING ---
-        print(f"\n  --- Training Phase ---")
-        # Get training images (ALREADY in percent change from per-run scaling)
         train_imgs = [all_runs_imgs[i] for i in train_idx]
         train_designs = [designs[i] for i in train_idx]
-        
-        # Calculate total timepoints for training
-        train_total_tp = sum(run_timepoints[i] for i in train_idx)
-        train_design_total_tp = sum(len(designs[i]) for i in train_idx)
-        print(f"  Training total timepoints: fMRI={train_total_tp}, Design={train_design_total_tp}")
-        
-        if train_total_tp != train_design_total_tp:
-            raise ValueError(f"Training timepoint mismatch! fMRI={train_total_tp}, Design={train_design_total_tp}")
-        
-        # Concatenate training images (already scaled per run)
-        print(f"  Concatenating {len(train_imgs)} training runs...")
-        train_imgs_concat = concat_imgs(train_imgs)
-        train_data = get_data(train_imgs_concat)
-        print(f"    Concatenated training data shape: {train_data.shape}")
-        print(f"    Concatenated training data range: [{np.min(train_data):.2f}, {np.max(train_data):.2f}]")
-        print(f"    Concatenated training data mean: {np.mean(train_data):.2f}")
-        
-        # Create proper block-diagonal design matrix with run-specific nuisance regressors
-        print(f"  Creating block-diagonal design matrix...")
-        
-        # For training, we need to stack the design matrices with run-specific nuisance regressors
-        train_design_blocks = []
-        for run_idx, design in enumerate(train_designs):
-            # For each run, keep task regressors as is, but make nuisance regressors run-specific
-            # by adding a suffix to their names
-            task_part = design.iloc[:, :n_task_regressors]
-            nuisance_part = design.iloc[:, n_task_regressors:]
-            
-            # Rename nuisance columns to be run-specific
-            rename_dict = {col: f"{col}_run{run_idx}" for col in nuisance_part.columns}
-            nuisance_part = nuisance_part.rename(columns=rename_dict)
-            
-            # Combine task and renamed nuisance
-            run_design = pd.concat([task_part, nuisance_part], axis=1)
-            train_design_blocks.append(run_design)
-        
-        # Concatenate all runs
-        train_design_matrix = pd.concat(train_design_blocks, axis=0, ignore_index=True)
-        train_design_matrix = train_design_matrix.fillna(0)
-        
-        print(f"    Training design matrix shape: {train_design_matrix.shape}")
-        print(f"    Number of regressors: {train_design_matrix.shape[1]}")
-        print(f"    Training design matrix range: [{np.min(train_design_matrix.values):.4f}, {np.max(train_design_matrix.values):.4f}]")
-        
-        # Fit GLM with signal_scaling=False since we already applied percent change
-        print(f"  Fitting GLM on training data...")
-        print(f"    signal_scaling=False - data already in percent change")
-        print(f"    standardize=True - z-scores design matrix")
-        
-        fmri_glm = FirstLevelModel(
-            t_r=tr,
-            mask_img=mask_img,
-            standardize=True,
-            signal_scaling=False,  # CRITICAL: Data already in percent change
-            hrf_model=hrf_model,
-            minimize_memory=True,
-            verbose=0
-        )
-        
-        fmri_glm = fmri_glm.fit(train_imgs_concat, design_matrices=train_design_matrix)
-        
-        # Extract task betas (first n_task_regressors)
-        contrast_matrix = np.zeros((n_task_regressors, train_design_matrix.shape[1]))
-        for i in range(n_task_regressors):
-            contrast_matrix[i, i] = 1
-        
-        print(f"  Extracting task betas...")
-        betas_img = fmri_glm.compute_contrast(
-            contrast_matrix,
-            output_type='effect_size'
-        )
-        betas = get_data(betas_img).astype(np.float32)
-        print(f"    Betas shape: {betas.shape}")
-        print(f"    Betas range: [{np.min(betas):.4f}, {np.max(betas):.4f}]")
-        print(f"    Betas mean: {np.mean(betas):.4f}")
-        
-        # Store training task regressor statistics for later z-scoring of test data
-        train_task_means = []
-        train_task_stds = []
-        for i in range(n_task_regressors):
-            train_task_col = train_design_matrix.values[:, i]
-            train_task_means.append(np.mean(train_task_col))
-            train_task_stds.append(np.std(train_task_col))
-        
-        print(f"    Training task regressor stats:")
-        for i in range(n_task_regressors):
-            print(f"      Task {i}: mean={train_task_means[i]:.4f}, std={train_task_stds[i]:.4f}")
-        
-        # --- TESTING ---
-        print(f"\n  --- Testing Phase ---")
-        # Get test images (ALREADY in percent change from per-run scaling)
         test_imgs = [all_runs_imgs[i] for i in test_idx]
         test_designs = [designs[i] for i in test_idx]
         
-        # Calculate total timepoints for testing
-        test_total_tp = sum(run_timepoints[i] for i in test_idx)
-        test_design_total_tp = sum(len(designs[i]) for i in test_idx)
-        print(f"  Testing total timepoints: fMRI={test_total_tp}, Design={test_design_total_tp}")
-        
-        if test_total_tp != test_design_total_tp:
-            raise ValueError(f"Testing timepoint mismatch! fMRI={test_total_tp}, Design={test_design_total_tp}")
-        
-        # Concatenate test images (already scaled per run)
-        print(f"  Concatenating {len(test_imgs)} test runs...")
-        test_imgs_concat = concat_imgs(test_imgs)
-        test_data = get_data(test_imgs_concat)
-        print(f"    Concatenated test data shape: {test_data.shape}")
-        print(f"    Concatenated test data range: [{np.min(test_data):.2f}, {np.max(test_data):.2f}]")
-        print(f"    Concatenated test data mean: {np.mean(test_data):.2f}")
-        
-        # Create test design matrix with run-specific nuisance regressors
-        test_design_blocks = []
-        for run_idx, design in enumerate(test_designs):
-            task_part = design.iloc[:, :n_task_regressors]
-            nuisance_part = design.iloc[:, n_task_regressors:]
-            
-            # Rename nuisance columns to be run-specific
-            rename_dict = {col: f"{col}_run{run_idx}" for col in nuisance_part.columns}
-            nuisance_part = nuisance_part.rename(columns=rename_dict)
-            
-            # Combine task and renamed nuisance
-            run_design = pd.concat([task_part, nuisance_part], axis=1)
-            test_design_blocks.append(run_design)
-        
-        test_design_matrix = pd.concat(test_design_blocks, axis=0, ignore_index=True)
-        test_design_matrix = test_design_matrix.fillna(0)
-        print(f"    Test design matrix shape: {test_design_matrix.shape}")
-        print(f"    Test design matrix range: [{np.min(test_design_matrix.values):.4f}, {np.max(test_design_matrix.values):.4f}]")
-        
-        # Extract nuisance regressors for cleaning
-        nuisance_regressors = test_design_matrix.values[:, n_task_regressors:].astype(np.float32)
-        print(f"    Nuisance regressors shape: {nuisance_regressors.shape}")
-        print(f"    Nuisance regressors range: [{np.min(nuisance_regressors):.4f}, {np.max(nuisance_regressors):.4f}]")
-        
-        # Create confounds DataFrame
-        confounds_df = pd.DataFrame(
-            nuisance_regressors,
-            columns=[f"nuisance_{i}" for i in range(nuisance_regressors.shape[1])]
+        r2_map = run_single_split(
+            train_imgs, test_imgs,
+            train_designs, test_designs,
+            mask_data, n_task_regressors, tr, hrf_model
         )
         
-        # Clean test data by regressing out nuisance
-        print(f"  Regressing out nuisance regressors...")
-        test_imgs_cleaned = clean_img(
-            test_imgs_concat,  # Use already scaled data
-            confounds=confounds_df,
-            detrend=False,
-            standardize=False,  # Keep percent change scale
-            t_r=tr
-        )
-        
-        test_data_cleaned = get_data(test_imgs_cleaned).astype(np.float32)
-        print(f"    Cleaned test data range: [{np.min(test_data_cleaned):.2f}, {np.max(test_data_cleaned):.2f}]")
-        print(f"    Cleaned test data mean: {np.mean(test_data_cleaned):.2f}")
-        print(f"    Cleaned test data std: {np.std(test_data_cleaned):.2f}")
-        
-        # Check percentiles to identify outliers
-        test_data_masked_temp = test_data_cleaned[mask_data]
-        if len(test_data_masked_temp) > 0:
-            percentiles = np.percentile(test_data_masked_temp, [1, 5, 50, 95, 99])
-            print(f"    Cleaned data percentiles: 1%={percentiles[0]:.2f}, 5%={percentiles[1]:.2f}, "
-                  f"50%={percentiles[2]:.2f}, 95%={percentiles[3]:.2f}, 99%={percentiles[4]:.2f}")
-        
-        # Get raw task regressors from test design
-        test_task_regressors_raw = test_design_matrix.values[:, :n_task_regressors].astype(np.float32)
-        
-        # CRITICAL: Z-score test task regressors using training statistics
-        # This is necessary because the GLM was fit with standardize=True
-        test_task_regressors_zscored = np.zeros_like(test_task_regressors_raw)
-        for i in range(n_task_regressors):
-            if train_task_stds[i] > 0:
-                test_task_regressors_zscored[:, i] = (test_task_regressors_raw[:, i] - train_task_means[i]) / train_task_stds[i]
-            else:
-                test_task_regressors_zscored[:, i] = 0
-        
-        print(f"    Raw task regressors range: [{np.min(test_task_regressors_raw):.4f}, {np.max(test_task_regressors_raw):.4f}]")
-        print(f"    Z-scored task regressors range: [{np.min(test_task_regressors_zscored):.4f}, {np.max(test_task_regressors_zscored):.4f}]")
-        
-        # Reshape for prediction
-        betas_reshaped = betas.reshape(-1, n_task_regressors)
-        mask_flat = mask_data.ravel()
-        betas_masked = betas_reshaped[mask_flat, :]
-        
-        test_data_reshaped = test_data_cleaned.reshape(-1, test_data_cleaned.shape[-1])
-        test_data_masked = test_data_reshaped[mask_flat, :]
-        
-        # Predict using Z-SCORED task regressors
-        print(f"  Predicting test time series with z-scored task regressors...")
-        predicted = betas_masked @ test_task_regressors_zscored.T
-        
-        print(f"    Predicted range: [{np.min(predicted):.4f}, {np.max(predicted):.4f}]")
-        print(f"    Predicted mean: {np.mean(predicted):.4f}")
-        print(f"    Predicted std: {np.std(predicted):.4f}")
-        print(f"    Cleaned data range: [{np.min(test_data_masked):.4f}, {np.max(test_data_masked):.4f}]")
-        print(f"    Cleaned data mean: {np.mean(test_data_masked):.4f}")
-        print(f"    Cleaned data std: {np.std(test_data_masked):.4f}")
-        
-        # Scale comparison
-        scale_ratio = np.std(predicted) / (np.std(test_data_masked) + 1e-8)
-        print(f"    Scale ratio (predicted/actual): {scale_ratio:.4f}")
-        
-        # Compute R²
-        print(f"  Computing R²...")
-        
-        test_data_4d = np.zeros(mask_shape + (test_data_masked.shape[1],), dtype=np.float32)
-        predicted_4d = np.zeros(mask_shape + (predicted.shape[1],), dtype=np.float32)
-        
-        test_data_4d[mask_data, :] = test_data_masked
-        predicted_4d[mask_data, :] = predicted
-        
-        r2_map, r2_1minus, r2_sklearn = compute_r2_multiple_methods(test_data_4d, predicted_4d, mask_data)
-        
-        # Accumulate results (using squared correlation as primary)
         r2_sum += r2_map
         r2_sq_sum += r2_map ** 2
-
-        # Clean up
-        del fmri_glm, betas, betas_reshaped, betas_masked, predicted, test_data_cleaned
-        del test_imgs_cleaned, train_imgs_concat, test_imgs_concat
         gc.collect()
-
+    
     n_splits = len(splits)
     mean_r2 = r2_sum / n_splits
     var_r2 = (r2_sq_sum / n_splits) - (mean_r2 ** 2)
-
+    
     print(f"\n{'='*60}")
     print("FINAL RESULTS")
     print(f"{'='*60}")
-    print(f"Mean R² across all splits (within mask): {np.mean(mean_r2[mask_data]):.6f}")
-    print(f"Std R² across all splits: {np.std(mean_r2[mask_data]):.6f}")
-    print(f"R² range: [{np.min(mean_r2[mask_data]):.6f}, {np.max(mean_r2[mask_data]):.6f}]")
-
+    print(f"Mean R²: {np.mean(mean_r2[mask_data]):.6f}")
+    print(f"Std R²: {np.std(mean_r2[mask_data]):.6f}")
+    print(f"Range: [{np.min(mean_r2[mask_data]):.6f}, {np.max(mean_r2[mask_data]):.6f}]")
+    
     return mean_r2.astype(np.float32), var_r2.astype(np.float32)
 
 
@@ -589,158 +516,69 @@ def run_cv(
 # ============================================================
 
 def main():
-    parser = argparse.ArgumentParser(description="Cross-validated GLM with per-run percent change scaling")
+    parser = argparse.ArgumentParser(description="Cross-validated GLM")
+    parser.add_argument("--nii_files", nargs="+", required=True)
+    parser.add_argument("--events_files", nargs="+", required=True)
+    parser.add_argument("--mask", required=True)
+    parser.add_argument("--n_task_regressors", type=int, required=True)
+    parser.add_argument("--tr", type=float, default=2.0)
+    parser.add_argument("--hrf_model", type=str, default="spm")
+    parser.add_argument("--n_splits", type=int, default=50)
+    parser.add_argument("--test_size", type=float, default=0.3)
+    parser.add_argument("--n_permutations", type=int, default=0)
+    parser.add_argument("--random_state", type=int, default=42)
+    parser.add_argument("--output_prefix", required=True)
+    parser.add_argument("--only_permutations", action="store_true")
+    parser.add_argument("--debug", action="store_true")
     
-    parser.add_argument("--nii_files", nargs="+", required=True,
-                        help="List of NIfTI files (one per run)")
-    parser.add_argument("--events_files", nargs="+", required=True,
-                        help="List of design matrix CSV files (one per run)")
-    parser.add_argument("--mask", required=True,
-                        help="Mask NIfTI file")
-    parser.add_argument("--n_task_regressors", type=int, required=True,
-                        help="Number of task-related regressors (first columns in design matrix)")
-    parser.add_argument("--tr", type=float, default=2.0,
-                        help="Repetition time in seconds")
-    parser.add_argument("--hrf_model", type=str, default="spm",
-                        help="HRF model to use")
-    parser.add_argument("--n_splits", type=int, default=50,
-                        help="Number of cross-validation splits")
-    parser.add_argument("--test_size", type=float, default=0.3,
-                        help="Proportion of runs to use for testing")
-    parser.add_argument("--n_permutations", type=int, default=0,
-                        help="Number of permutations for null distribution")
-    parser.add_argument("--random_state", type=int, default=42,
-                        help="Random seed")
-    parser.add_argument("--output_prefix", required=True,
-                        help="Prefix for output files")
-    parser.add_argument("--only_permutations", action="store_true",
-                        help="Only run permutations (skip real data)")
-    parser.add_argument("--debug", action="store_true",
-                        help="Enable debug output")
-
     args = parser.parse_args()
-
+    
     if len(args.nii_files) != len(args.events_files):
-        raise ValueError(f"Number of NIfTI files ({len(args.nii_files)}) does not match number of event files ({len(args.events_files)})")
-
+        raise ValueError("Mismatch between NIfTI and event files")
+    
     print(f"\n{'='*60}")
-    print("CROSS-VALIDATED GLM WITH PER-RUN PERCENT CHANGE SCALING")
+    print("CROSS-VALIDATED GLM")
     print(f"{'='*60}")
-    print(f"Input files: {len(args.nii_files)} runs")
-    print(f"Parameters:")
-    print(f"  Task regressors: {args.n_task_regressors}")
-    print(f"  TR: {args.tr}s")
-    print(f"  HRF model: {args.hrf_model}")
-    print(f"  Number of splits: {args.n_splits}")
-    print(f"  Test size: {args.test_size*100:.0f}%")
-    print(f"  Debug mode: {args.debug}")
-    print(f"{'='*60}\n")
-
-    # Load mask
-    print("Loading mask...")
+    # ... print parameters
+    
     mask_img = nib.load(args.mask)
-    print(f"Mask shape: {mask_img.shape}")
-
-    # Create cross-validation splits
+    
     splitter = ShuffleSplit(
         n_splits=args.n_splits,
         test_size=args.test_size,
         random_state=args.random_state
     )
     splits = list(splitter.split(args.nii_files))
-
-    # Run real data CV
+    
     if not args.only_permutations:
-        print("\n" + "="*60)
-        print("RUNNING REAL DATA CV")
-        print("="*60)
-        
+        print("\nRUNNING REAL DATA CV")
         mean_r2, var_r2 = run_cv(
-            args.nii_files,
-            args.events_files,
-            mask_img,
-            args.n_task_regressors,
-            args.tr,
-            args.hrf_model,
-            splits,
-            args.random_state,
-            permute=False,
-            debug=args.debug,
+            args.nii_files, args.events_files, mask_img,
+            args.n_task_regressors, args.tr, args.hrf_model,
+            splits, args.random_state, debug=args.debug
         )
-
-        # Save results
-        print("\nSaving results...")
-        
-        out_mean = f"{args.output_prefix}_real_mean_r2.nii.gz"
-        img_mean = nib.Nifti1Image(mean_r2, mask_img.affine)
-        img_mean.to_filename(out_mean)
-        print(f"  Saved: {out_mean}")
-
-        out_var = f"{args.output_prefix}_real_var_r2.nii.gz"
-        img_var = nib.Nifti1Image(var_r2, mask_img.affine)
-        img_var.to_filename(out_var)
-        print(f"  Saved: {out_var}")
-
+        nib.Nifti1Image(mean_r2, mask_img.affine).to_filename(f"{args.output_prefix}_real_mean_r2.nii.gz")
+        nib.Nifti1Image(var_r2, mask_img.affine).to_filename(f"{args.output_prefix}_real_var_r2.nii.gz")
         del mean_r2, var_r2
         gc.collect()
-
-    # Run permutations
+    
     if args.n_permutations > 0:
-        print(f"\n{'='*60}")
-        print(f"RUNNING {args.n_permutations} PERMUTATIONS")
-        print(f"{'='*60}")
-
-        running_mean = None
-        max_distribution = np.zeros(args.n_permutations, dtype=np.float32)
-        mask_data = mask_img.get_fdata().astype(bool)
-
-        for p in tqdm(range(args.n_permutations), desc="Permutations"):
-            mean_r2, _ = run_cv(
-                args.nii_files,
-                args.events_files,
-                mask_img,
-                args.n_task_regressors,
-                args.tr,
-                args.hrf_model,
-                splits,
-                args.random_state + p + 1,
-                permute=True,
-                debug=args.debug,
-            )
-
-            if running_mean is None:
-                running_mean = np.zeros_like(mean_r2, dtype=np.float32)
-
-            running_mean += mean_r2
-            max_distribution[p] = np.max(mean_r2[mask_data])
-
-            del mean_r2
-            gc.collect()
-
-        # Save permutation results
-        perm_mean = running_mean / args.n_permutations
-        out_perm = f"{args.output_prefix}_perm_mean_r2.nii.gz"
-        img_perm = nib.Nifti1Image(perm_mean, mask_img.affine)
-        img_perm.to_filename(out_perm)
-        print(f"  Saved: {out_perm}")
-
-        out_dist = f"{args.output_prefix}_perm_max_distribution.npy"
-        np.save(out_dist, max_distribution)
-        print(f"  Saved: {out_dist}")
-
-        # Calculate significance thresholds
-        threshold_95 = np.percentile(max_distribution, 95)
-        threshold_99 = np.percentile(max_distribution, 99)
+        print(f"\nRUNNING {args.n_permutations} PERMUTATIONS")
+        max_dist = run_permutations(
+            args.nii_files, args.events_files, mask_img,
+            args.n_task_regressors, args.tr, args.hrf_model,
+            splits, args.n_permutations, args.random_state,
+            debug=args.debug
+        )
+        np.save(f"{args.output_prefix}_perm_max_distribution.npy", max_dist)
+        
+        threshold_95 = np.percentile(max_dist, 95)
+        threshold_99 = np.percentile(max_dist, 99)
         print(f"\nPermutation thresholds:")
         print(f"  95th: {threshold_95:.6f}")
         print(f"  99th: {threshold_99:.6f}")
-
-        del perm_mean, running_mean
-        gc.collect()
-
-    print(f"\n{'='*60}")
-    print("DONE!")
-    print(f"{'='*60}\n")
+    
+    print("\nDONE!\n")
 
 
 if __name__ == "__main__":
