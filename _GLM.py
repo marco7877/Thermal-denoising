@@ -416,9 +416,9 @@ def run_permutations(
     for p in tqdm(range(n_permutations), desc="Permutations"):
         rng = np.random.default_rng(random_state + p + 1)
         r2_perm_sum = np.zeros(mask_data.shape, dtype=np.float32)
-        
-        for train_idx, test_idx in splits:
+         for split_id, (train_idx, test_idx) in enumerate(splits):
             # Test data (unchanged)
+            print(f"Split {split_id+1}/{len(splits)}")
             test_imgs = [all_runs_imgs[i] for i in test_idx]
             test_designs = [designs[i] for i in test_idx]
             
@@ -445,10 +445,10 @@ def run_permutations(
         max_distribution[p] = np.max(r2_perm_mean[mask_data])
         
         # Clean up
-        del r2_perm_sum, r2_perm_mean
+        del r2_perm_sum
         gc.collect()
     
-    return max_distribution
+    return max_distribution, r2_perm_mean.astype(np.float32)
 
 
 # ============================================================
@@ -478,9 +478,7 @@ def run_cv(
     r2_sq_sum = np.zeros(mask_shape, dtype=np.float32)
     
     for split_id, (train_idx, test_idx) in enumerate(splits):
-        print(f"\n{'='*60}")
         print(f"Split {split_id + 1}/{len(splits)}")
-        print(f"{'='*60}")
         
         train_imgs = [all_runs_imgs[i] for i in train_idx]
         train_designs = [designs[i] for i in train_idx]
@@ -501,9 +499,7 @@ def run_cv(
     mean_r2 = r2_sum / n_splits
     var_r2 = (r2_sq_sum / n_splits) - (mean_r2 ** 2)
     
-    print(f"\n{'='*60}")
     print("FINAL RESULTS")
-    print(f"{'='*60}")
     print(f"Mean R²: {np.mean(mean_r2[mask_data]):.6f}")
     print(f"Std R²: {np.std(mean_r2[mask_data]):.6f}")
     print(f"Range: [{np.min(mean_r2[mask_data]):.6f}, {np.max(mean_r2[mask_data]):.6f}]")
@@ -564,20 +560,17 @@ def main():
     
     if args.n_permutations > 0:
         print(f"\nRUNNING {args.n_permutations} PERMUTATIONS")
-        max_dist = run_permutations(
+        max_dist, mean_r2 = run_permutations(
             args.nii_files, args.events_files, mask_img,
             args.n_task_regressors, args.tr, args.hrf_model,
             splits, args.n_permutations, args.random_state,
             debug=args.debug
         )
         np.save(f"{args.output_prefix}_perm_max_distribution.npy", max_dist)
-        
-        threshold_95 = np.percentile(max_dist, 95)
-        threshold_99 = np.percentile(max_dist, 99)
-        print(f"\nPermutation thresholds:")
-        print(f"  95th: {threshold_95:.6f}")
-        print(f"  99th: {threshold_99:.6f}")
-    
+        nib.Nifti1Image(mean_r2, mask_img.affine).to_filename(f"{args.output_prefix}_perm_mean_r2.nii.gz")
+        del mean_r2, max_dist
+        gc.collect()
+
     print("\nDONE!\n")
 
 
