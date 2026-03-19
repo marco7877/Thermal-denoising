@@ -1,3 +1,53 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+Created on Fri Oct 20 15:23:25 2023
+@author: mflores
+
+Compute voxel‑wise reliability for fMRI data.
+Supports:
+  - Single run: split into two halves.
+  - Multiple runs: compare all unique pairs of runs.
+Outputs:
+  - Reliability NIfTI maps (optional).
+  - Histograms of reliability values (optional).
+  - CSV files of reliability values (optional).
+"""
+
+from itertools import combinations
+import matplotlib.pyplot as plt
+import numpy as np
+from nibabel import Nifti1Image
+from nilearn.image import load_img
+from nilearn.masking import apply_mask, unmask
+from nilearn.plotting import plot_stat_map
+
+# -----------------------------------------------------------
+# Core function: voxel‑wise Pearson correlation (fast, vectorised)
+# -----------------------------------------------------------
+def voxelwise_correlation(X, Y):
+    """
+    Compute Pearson correlation per row (voxel) between two 2D arrays.
+
+    Parameters
+    ----------
+    X, Y : 2D arrays of shape (n_voxels, n_timepoints)
+           Must have the same number of time points.
+
+    Returns
+    -------
+    r : 1D array of shape (n_voxels) with correlation coefficients.
+    """
+    # Z‑score along time axis (with ddof=1 for sample std)
+    Xz = (X - np.mean(X, axis=1, keepdims=True)) / np.std(X, axis=1, keepdims=True, ddof=1)
+    Yz = (Y - np.mean(Y, axis=1, keepdims=True)) / np.std(Y, axis=1, keepdims=True, ddof=1)
+    # Dot product and normalise by (n‑1)
+    r = np.sum(Xz * Yz, axis=1) / (X.shape[1] - 1)
+    return r
+
+# -----------------------------------------------------------
+# Main reliability analysis function
+# -----------------------------------------------------------
 def reliability_analysis(epi_fname, mask, sbref,
                          plot=False, savecorr=False, hist=False, make_nifti=True):
     """
@@ -20,13 +70,11 @@ def reliability_analysis(epi_fname, mask, sbref,
     # 1. Load and mask each run
     # -------------------------------------------------------
     array_dict = {}          # key = run index, value = masked data (voxels, time)
-    n_time = {}              # store number of time points per run
     for i, fname in enumerate(epi_fname):
         print(f"\nLoading {fname} ...")
         # apply_mask returns (time, voxels); we transpose to (voxels, time)
         data = np.transpose(apply_mask(fname, mask)).astype(np.float32)
         array_dict[i] = data
-        n_time[i] = data.shape[1]
         print(f"   Shape (voxels, time): {data.shape}")
         print(f"   Voxels in mask: {data.shape[0]}")
 
@@ -48,7 +96,7 @@ def reliability_analysis(epi_fname, mask, sbref,
         half1 = data[:, :mid]
         half2 = data[:, mid:]
         print(f"\nSplit single run at time point {mid} -> halves shape: {half1.shape}, {half2.shape}")
-        # Halves may have slightly different lengths if odd number of volumes; handle by truncating to min length
+        # Halves may have slightly different lengths if odd number of volumes; truncate to min length
         min_len = min(half1.shape[1], half2.shape[1])
         if half1.shape[1] != half2.shape[1]:
             print(f"  Warning: halves have different lengths ({half1.shape[1]} vs {half2.shape[1]}). Truncating to {min_len}.")
@@ -58,8 +106,6 @@ def reliability_analysis(epi_fname, mask, sbref,
         r_vals = voxelwise_correlation(half1, half2)
         reliability_dict = {0: r_vals}   # only one comparison
         pair_list = [(0, 1)]
-        # For output filenames, we will use the original epi_fname[0] as base
-        base_fname_for_output = epi_fname[0]
 
     else:
         # Multiple runs: compute reliability for every unique pair
@@ -158,44 +204,43 @@ def reliability_analysis(epi_fname, mask, sbref,
             print(f"Saved reliability map plot: {plot_fname}")
 
     print("\nReliability analysis completed.\n")
-###### Main      ##############################
-###############################################
 
+# -----------------------------------------------------------
+# Main script (as provided by user)
+# -----------------------------------------------------------
+if __name__ == "__main__":
+    source_dir = "/scratch/mflores/Resting_State/analysis_timeSeries"
+    methods = ["vanilla", "nordic", "tmppca", "mppca", "nordic", "hydra"]
+    subjects = ["sub-001", "sub-002", "sub-003", "sub-004", "sub-005"]
+    tasks = ["task-HABLA1200", "task-HABLA1700"]
+    runs = [""]   # no run label in filenames (adjust if needed)
 
-source_dir = "/scratch/mflores/Resting_State/analysis_timeSeries"
-methods = ["vanilla", "nordic", "tmppca","mppca", "nordic", "hydra"]
-subjects = ["sub-001","sub-002","sub-003","sub-004","sub-005"]
-tasks = ["task-HABLA1200","task-HABLA1700"]
-#runs = ["_run-1","_run-2"]
-runs=[""]
-for subject in subjects:
-    for task in tasks:
-        for method in methods:
-            for run in runs:
-                base_name = source_dir + "/" + subject + "_ses-1_" + task #+ run 
-                mask = base_name + "_echo-1_part-mag_gm_mask-union.nii.gz"
-                sbref = ("/scratch/mflores/Resting_State/analysis/"
-                        + subject
-                        + "_ses-1_"
-                        + task  #+ "_run-1" 
-                        + "_echo-1_part-mag_masked_sbref.nii.gz"
-                        )
-                # EPI, Split
-#                try:
-#                    epi = [base_name + "_OC_part-mag_bold_" + method + ".nii.gz"]
-#                    print("LOG: Attempting EPI, split reliability analysis")
-#                    reliability_analysis(epi, mask, sbref)
-#                except Exception:
-#                    print(f"ERROR: {subject}, task:{task}, and method:{method} one time series")
+    for subject in subjects:
+        for task in tasks:
+            for method in methods:
+                for run in runs:
+                    base_name = f"{source_dir}/{subject}_ses-1_{task}"
+                    mask = f"{base_name}_echo-1_part-mag_gm_mask-union.nii.gz"
+                    sbref = (f"/scratch/mflores/Resting_State/analysis/"
+                             f"{subject}_ses-1_{task}_echo-1_part-mag_masked_sbref.nii.gz")
 
-#                 EPI, Series
-                try:
-                    epi_series = [
-                            base_name + "_OC_part-mag_bold_" + method + "1.nii.gz",
-                            base_name + "_OC_part-mag_bold_" + method + "2.nii.gz"
-                            ]
-                    print("LOG: Attempting EPI, series reliability analysis")
-                    reliability_analysis(epi_series, mask, sbref)
-                except Exception:
-                    print(f"ERROR: {subject}, task:{task}, and method:{method} episeries")
+                    # ---- Single run, split analysis ----
+                    try:
+                        epi_single = [f"{base_name}_OC_part-mag_bold_{method}.nii.gz"]
+                        print(f"\nLOG: Attempting EPI split analysis for {subject} {task} {method}")
+                        reliability_analysis(epi_single, mask, sbref,
+                                             plot=False, savecorr=False, hist=False, make_nifti=True)
+                    except Exception as e:
+                        print(f"ERROR (split) {subject}, {task}, {method}: {e}")
 
+                    # ---- Two‑run series analysis ----
+                    try:
+                        epi_series = [
+                            f"{base_name}_OC_part-mag_bold_{method}1.nii.gz",
+                            f"{base_name}_OC_part-mag_bold_{method}2.nii.gz"
+                        ]
+                        print(f"\nLOG: Attempting EPI series analysis for {subject} {task} {method}")
+                        reliability_analysis(epi_series, mask, sbref,
+                                             plot=False, savecorr=False, hist=False, make_nifti=True)
+                    except Exception as e:
+                        print(f"ERROR (series) {subject}, {task}, {method}: {e}")
