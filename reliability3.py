@@ -22,9 +22,29 @@ from nilearn.image import load_img
 from nilearn.masking import apply_mask, unmask
 from nilearn.plotting import plot_stat_map
 import os
+
 # -----------------------------------------------------------
 # Core function: voxel‑wise Pearson correlation (fast, vectorised)
 # -----------------------------------------------------------
+def voxelwise_correlation(X, Y):
+    """
+    Compute Pearson correlation per row (voxel) between two 2D arrays.
+
+    Parameters
+    ----------
+    X, Y : 2D arrays of shape (n_voxels, n_timepoints)
+           Must have the same number of time points.
+
+    Returns
+    -------
+    r : 1D array of shape (n_voxels) with correlation coefficients.
+    """
+    # Z‑score along time axis (with ddof=1 for sample std)
+    Xz = (X - np.mean(X, axis=1, keepdims=True)) / np.std(X, axis=1, keepdims=True, ddof=1)
+    Yz = (Y - np.mean(Y, axis=1, keepdims=True)) / np.std(Y, axis=1, keepdims=True, ddof=1)
+    # Dot product and normalise by (n‑1)
+    r = np.sum(Xz * Yz, axis=1) / (X.shape[1] - 1)
+    return r
 
 
 def add_suffix_to_filename(fpath, suffix):
@@ -40,6 +60,7 @@ def add_suffix_to_filename(fpath, suffix):
         base, ext2 = os.path.splitext(base)
         ext = ext2 + ext   # now ext = '.nii.gz'
     return base + suffix + ext
+
 
 def reliability_analysis(epi_fname, mask, sbref,
                          plot=False, savecorr=False, hist=False, make_nifti=True):
