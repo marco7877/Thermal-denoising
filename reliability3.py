@@ -21,33 +21,26 @@ from nibabel import Nifti1Image
 from nilearn.image import load_img
 from nilearn.masking import apply_mask, unmask
 from nilearn.plotting import plot_stat_map
-
+import os
 # -----------------------------------------------------------
 # Core function: voxel‑wise Pearson correlation (fast, vectorised)
 # -----------------------------------------------------------
-def voxelwise_correlation(X, Y):
+
+
+def add_suffix_to_filename(fpath, suffix):
     """
-    Compute Pearson correlation per row (voxel) between two 2D arrays.
-
-    Parameters
-    ----------
-    X, Y : 2D arrays of shape (n_voxels, n_timepoints)
-           Must have the same number of time points.
-
-    Returns
-    -------
-    r : 1D array of shape (n_voxels) with correlation coefficients.
+    Insert a suffix before the file extension.
+    Handles .nii.gz correctly.
+    Example: add_suffix('sub-1_task-bold.nii.gz', '_reliability')
+             -> 'sub-1_task-bold_reliability.nii.gz'
     """
-    # Z‑score along time axis (with ddof=1 for sample std)
-    Xz = (X - np.mean(X, axis=1, keepdims=True)) / np.std(X, axis=1, keepdims=True, ddof=1)
-    Yz = (Y - np.mean(Y, axis=1, keepdims=True)) / np.std(Y, axis=1, keepdims=True, ddof=1)
-    # Dot product and normalise by (n‑1)
-    r = np.sum(Xz * Yz, axis=1) / (X.shape[1] - 1)
-    return r
+    base, ext = os.path.splitext(fpath)
+    if ext == '.gz':
+        # .nii.gz case: base is e.g. 'sub-1_task-bold.nii'
+        base, ext2 = os.path.splitext(base)
+        ext = ext2 + ext   # now ext = '.nii.gz'
+    return base + suffix + ext
 
-# -----------------------------------------------------------
-# Main reliability analysis function
-# -----------------------------------------------------------
 def reliability_analysis(epi_fname, mask, sbref,
                          plot=False, savecorr=False, hist=False, make_nifti=True):
     """
@@ -133,15 +126,29 @@ def reliability_analysis(epi_fname, mask, sbref,
     # -------------------------------------------------------
     # 3. Generate outputs for each reliability map
     # -------------------------------------------------------
+    # Decide suffix format based on number of runs
+    if len(array_dict) > 2:
+        # For more than two runs, include pair indices to avoid overwriting
+        suffix_template = '_reliability_run{}_run{}'
+    else:
+        # For one or two runs, just '_reliability'
+        suffix_template = '_reliability'
+
     for pair_idx, (i, j) in enumerate(pair_list if len(array_dict)>1 else [(0,1)]):
         r_vals = reliability_dict[pair_idx]   # 1D array of length n_active
 
+        # Base filename for outputs: use the first file of the pair
+        base_fname = epi_fname[i]
+
+        # Build the suffix for this pair
+        if len(array_dict) > 2:
+            suffix = suffix_template.format(i, j)
+        else:
+            suffix = suffix_template
+
         # ---- Save reliability values as CSV (if savecorr requested) ----
         if savecorr:
-            csv_fname = epi_fname[i].replace(
-                epi_fname[i].split('_')[-1],
-                f"reliability_run{i}_run{j}.csv"
-            )
+            csv_fname = add_suffix_to_filename(base_fname, suffix + '.csv')
             np.savetxt(csv_fname, r_vals, delimiter=',')
             print(f"Saved reliability CSV: {csv_fname}")
 
@@ -151,10 +158,7 @@ def reliability_analysis(epi_fname, mask, sbref,
             vol_data = np.zeros(first_data.shape[0], dtype=np.float32)
             vol_data[array_submask] = r_vals
             reliability_img = unmask(vol_data, mask)
-            out_nii = epi_fname[i].replace(
-                epi_fname[i].split('_')[-1],
-                f"reliability_run{i}_run{j}.nii.gz"
-            )
+            out_nii = add_suffix_to_filename(base_fname, suffix + '.nii.gz')
             reliability_img.to_filename(out_nii)
             print(f"Saved reliability NIfTI: {out_nii}")
 
@@ -165,10 +169,7 @@ def reliability_analysis(epi_fname, mask, sbref,
             ax.set_xlabel('Reliability (Pearson r)')
             ax.set_ylabel('Density')
             ax.set_title(f'Reliability histogram (runs {i}-{j})')
-            hist_fname = epi_fname[i].replace(
-                epi_fname[i].split('_')[-1],
-                f"reliability_hist_run{i}_run{j}.png"
-            )
+            hist_fname = add_suffix_to_filename(base_fname, suffix + '_hist.png')
             fig.savefig(hist_fname, dpi=150, bbox_inches='tight')
             plt.close(fig)
             print(f"Saved histogram: {hist_fname}")
@@ -195,10 +196,7 @@ def reliability_analysis(epi_fname, mask, sbref,
                 vmin=0,
                 vmax=0.5
             )
-            plot_fname = epi_fname[i].replace(
-                epi_fname[i].split('_')[-1],
-                f"reliability_map_run{i}_run{j}.png"
-            )
+            plot_fname = add_suffix_to_filename(base_fname, suffix + '_map.png')
             display.savefig(plot_fname)
             display.close()
             print(f"Saved reliability map plot: {plot_fname}")
