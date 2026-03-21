@@ -228,20 +228,20 @@ def reliability_analysis(epi_fname, mask, sbref,
 # Main script (as provided by user)
 # -----------------------------------------------------------
 if __name__ == "__main__":
-    source_dir = "/scratch/mflores/Resting_State/analysis_timeSeries"
+    source_dir = "/scratch/mflores/Rest_HighRes/analysis_timeSeries"
     methods = ["vanilla", "nordic", "tmppca", "mppca", "nordic", "hydra"]
-    subjects = ["sub-001", "sub-002", "sub-003", "sub-004", "sub-005"]
-    tasks = ["task-HABLA1200", "task-HABLA1700"]
-    runs = [""]   # no run label in filenames (adjust if needed)
+    subjects = ["sub-001"]
+    tasks = ["task-REST"]
+    runs = ["_run-1"]   # no run label in filenames (adjust if needed)
 
     for subject in subjects:
         for task in tasks:
             for method in methods:
                 for run in runs:
-                    base_name = f"{source_dir}/{subject}_ses-1_{task}"
+                    base_name = f"{source_dir}/{subject}_ses-1_{task}{run}"
                     mask = f"{base_name}_echo-1_part-mag_gm_mask-union.nii.gz"
                     sbref = (f"/scratch/mflores/Resting_State/analysis/"
-                             f"{subject}_ses-1_{task}_echo-1_part-mag_masked_sbref.nii.gz")
+                             f"{subject}_ses-1_{task}{run}_echo-1_part-mag_masked_sbref.nii.gz")
 
                     # ---- Single run, split analysis ----
                     try:
