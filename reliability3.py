@@ -1,12 +1,8 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Created on Fri Oct 20 15:23:25 2023
-@author: mflores
-
-Compute reliability of functional connectivity patterns for fMRI data.
-For each voxel, we correlate its whole‑brain connectivity profile across two runs/halves.
-The final reliability map stores r² (0 to 1).
+Compute reliability of functional connectivity patterns for fMRI data,
+using a batched approach to avoid memory blow‑up.
 """
 
 from itertools import combinations
@@ -20,20 +16,64 @@ from scipy.stats import pearsonr
 import os
 
 # -----------------------------------------------------------
-# Helper: compute full connectivity matrix for a run
+# Batched computation of reliability per voxel
 # -----------------------------------------------------------
-def compute_connectivity_matrix(data):
+def reliability_from_connectivity_profiles_batched(X, Y, batch_size=1000):
     """
-    data : (n_voxels, n_timepoints)
-    returns : n_voxels x n_voxels correlation matrix (float32)
+    X, Y : 2D arrays of shape (n_voxels, n_time) standardized (z‑scored)
+           for run1 and run2 respectively.
+    batch_size : number of voxels to process at once.
+
+    Returns reliability array of length n_voxels (r²).
     """
-    # Standardize along time axis
-    data_z = (data - np.mean(data, axis=1, keepdims=True)) / np.std(data, axis=1, keepdims=True, ddof=1)
-    # Correlation matrix = (Z * Z.T) / (n_time - 1)
-    R = np.dot(data_z, data_z.T) / (data.shape[1] - 1)
-    return R.astype(np.float32)
+    n_voxels, n_time = X.shape
+    reliability = np.zeros(n_voxels, dtype=np.float32)
+
+    # Precompute the full correlation matrices? No, we compute per batch.
+    # For each batch, we need the correlation of batch voxels with ALL voxels.
+    # This is: (X_batch @ X.T) / (n_time-1)
+    # We'll compute the denominator once.
+    denom = n_time - 1.0
+
+    # Process in batches
+    for start in range(0, n_voxels, batch_size):
+        end = min(start + batch_size, n_voxels)
+        batch_voxels = slice(start, end)
+
+        # Correlation of batch voxels with all voxels in run1
+        # X_batch: (batch_size, n_time)
+        X_batch = X[batch_voxels, :]
+        corr_batch1 = np.dot(X_batch, X.T) / denom   # shape (batch_size, n_voxels)
+
+        # Same for run2
+        Y_batch = Y[batch_voxels, :]
+        corr_batch2 = np.dot(Y_batch, Y.T) / denom   # shape (batch_size, n_voxels)
+
+        # For each voxel in the batch, compute reliability
+        for idx_in_batch, global_idx in enumerate(range(start, end)):
+            # Connectivity profile for this voxel (all voxels, including self)
+            prof1 = corr_batch1[idx_in_batch, :]
+            prof2 = corr_batch2[idx_in_batch, :]
+
+            # Remove self‑correlation (which is 1.0)
+            prof1 = np.delete(prof1, global_idx)
+            prof2 = np.delete(prof2, global_idx)
+
+            # Skip if profile has zero variance
+            if np.std(prof1) == 0 or np.std(prof2) == 0:
+                reliability[global_idx] = 0.0
+                continue
+
+            r_val, _ = pearsonr(prof1, prof2)
+            r_val = np.clip(r_val, -1.0, 1.0)
+            reliability[global_idx] = r_val ** 2
+
+    return reliability
 
 
+# -----------------------------------------------------------
+# Helper functions
+# -----------------------------------------------------------
 def add_suffix_to_filename(fpath, suffix):
     """
     Insert a suffix before the file extension, handling .nii.gz.
@@ -48,9 +88,10 @@ def add_suffix_to_filename(fpath, suffix):
 
 
 def reliability_analysis(epi_fname, mask, sbref,
-                         plot=False, savecorr=False, hist=False, make_nifti=True):
+                         plot=False, savecorr=False, hist=False, make_nifti=True,
+                         batch_size=1000):
     """
-    Compute reliability of functional connectivity patterns.
+    Compute reliability of functional connectivity patterns using batched correlation.
 
     epi_fname : list of paths to NIfTI files (1 or more runs).
     mask      : path to binary mask NIfTI.
@@ -59,9 +100,10 @@ def reliability_analysis(epi_fname, mask, sbref,
     savecorr  : if True, save reliability values as CSV (one per voxel).
     hist      : if True, plot and save histogram of reliability values.
     make_nifti: if True, save reliability map as NIfTI.
+    batch_size: number of voxels to process at once (adjust for memory).
     """
     print("\n" + "="*50)
-    print("Starting reliability analysis (connectivity‑based)")
+    print("Starting reliability analysis (connectivity‑based, batched)")
     print(f"EPI files: {epi_fname}")
     print(f"Mask: {mask}")
     print("="*50)
@@ -72,7 +114,6 @@ def reliability_analysis(epi_fname, mask, sbref,
     array_dict = {}
     for i, fname in enumerate(epi_fname):
         print(f"\nLoading {fname} ...")
-        # apply_mask returns (time, voxels); we transpose to (voxels, time)
         data = np.transpose(apply_mask(fname, mask)).astype(np.float32)
         array_dict[i] = data
         print(f"   Shape (voxels, time): {data.shape}")
@@ -94,34 +135,20 @@ def reliability_analysis(epi_fname, mask, sbref,
         half1 = data[:, :mid]
         half2 = data[:, mid:]
         print(f"\nSplit into halves at time {mid}: shapes {half1.shape}, {half2.shape}")
-        # Truncate to the shorter half (if odd number of volumes)
+        # Truncate to the shorter half
         min_len = min(half1.shape[1], half2.shape[1])
         if half1.shape[1] != half2.shape[1]:
             print(f"  Warning: halves have different lengths – truncating to {min_len}")
             half1 = half1[:, :min_len]
             half2 = half2[:, :min_len]
 
-        print("  Computing connectivity matrix for half 1...")
-        R1 = compute_connectivity_matrix(half1)
-        print("  Computing connectivity matrix for half 2...")
-        R2 = compute_connectivity_matrix(half2)
+        # Standardize (z‑score) along time axis
+        print("  Standardizing time series...")
+        half1_z = (half1 - np.mean(half1, axis=1, keepdims=True)) / np.std(half1, axis=1, keepdims=True, ddof=1)
+        half2_z = (half2 - np.mean(half2, axis=1, keepdims=True)) / np.std(half2, axis=1, keepdims=True, ddof=1)
 
-        # Per‑voxel reliability: correlate connectivity profiles
-        reliability = np.zeros(n_active, dtype=np.float32)
-        for v in range(n_active):
-            prof1 = np.delete(R1[v, :], v)   # remove self‑correlation
-            prof2 = np.delete(R2[v, :], v)
-
-            # Skip if profile is constant (zero variance)
-            if np.std(prof1) == 0 or np.std(prof2) == 0:
-                reliability[v] = 0.0
-                continue
-
-            r_val, _ = pearsonr(prof1, prof2)
-            # Clip to avoid tiny rounding errors outside [-1,1]
-            r_val = np.clip(r_val, -1.0, 1.0)
-            reliability[v] = r_val ** 2
-
+        # Compute reliability in batches
+        reliability = reliability_from_connectivity_profiles_batched(half1_z, half2_z, batch_size)
         reliability_dict = {0: reliability}
         pair_list = [(0, 1)]
 
@@ -143,30 +170,18 @@ def reliability_analysis(epi_fname, mask, sbref,
                 data_i = data_i[:, :min_len]
                 data_j = data_j[:, :min_len]
 
-            print("    Computing connectivity matrix for run", i)
-            R_i = compute_connectivity_matrix(data_i)
-            print("    Computing connectivity matrix for run", j)
-            R_j = compute_connectivity_matrix(data_j)
+            # Standardize
+            print("    Standardizing time series...")
+            data_i_z = (data_i - np.mean(data_i, axis=1, keepdims=True)) / np.std(data_i, axis=1, keepdims=True, ddof=1)
+            data_j_z = (data_j - np.mean(data_j, axis=1, keepdims=True)) / np.std(data_j, axis=1, keepdims=True, ddof=1)
 
-            reliability = np.zeros(n_active, dtype=np.float32)
-            for v in range(n_active):
-                prof_i = np.delete(R_i[v, :], v)
-                prof_j = np.delete(R_j[v, :], v)
-
-                if np.std(prof_i) == 0 or np.std(prof_j) == 0:
-                    reliability[v] = 0.0
-                    continue
-
-                r_val, _ = pearsonr(prof_i, prof_j)
-                r_val = np.clip(r_val, -1.0, 1.0)
-                reliability[v] = r_val ** 2
-
+            # Compute reliability in batches
+            reliability = reliability_from_connectivity_profiles_batched(data_i_z, data_j_z, batch_size)
             reliability_dict[idx] = reliability
 
     # -------------------------------------------------------
     # 3. Generate outputs for each reliability map
     # -------------------------------------------------------
-    # Choose suffix based on number of runs
     if len(array_dict) > 2:
         suffix_template = '_reliability_conn_run{}_run{}'
     else:
@@ -176,7 +191,6 @@ def reliability_analysis(epi_fname, mask, sbref,
         reliability = reliability_dict[pair_idx]
         base_fname = epi_fname[i]
 
-        # Build suffix
         if len(array_dict) > 2:
             suffix = suffix_template.format(i, j)
         else:
@@ -187,7 +201,6 @@ def reliability_analysis(epi_fname, mask, sbref,
 
         # ---- Save CSV (if requested) ----
         if savecorr:
-            # Remove .nii.gz extension manually
             base_without_ext, ext = os.path.splitext(base_fname)
             if ext == '.gz':
                 base_without_ext, ext2 = os.path.splitext(base_without_ext)
@@ -246,6 +259,8 @@ def reliability_analysis(epi_fname, mask, sbref,
             print(f"Saved reliability map plot: {plot_fname}")
 
     print("\nReliability analysis completed.\n")
+
+
 
 # -----------------------------------------------------------
 # Main script (as provided by user)
