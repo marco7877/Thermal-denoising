@@ -29,44 +29,48 @@ def reliability_from_connectivity_profiles_batched(X, Y, batch_size=1000):
     n_voxels, n_time = X.shape
     reliability = np.zeros(n_voxels, dtype=np.float32)
 
-    # Precompute the full correlation matrices? No, we compute per batch.
-    # For each batch, we need the correlation of batch voxels with ALL voxels.
-    # This is: (X_batch @ X.T) / (n_time-1)
-    # We'll compute the denominator once.
     denom = n_time - 1.0
 
-    # Process in batches
     for start in range(0, n_voxels, batch_size):
         end = min(start + batch_size, n_voxels)
         batch_voxels = slice(start, end)
 
         # Correlation of batch voxels with all voxels in run1
-        # X_batch: (batch_size, n_time)
         X_batch = X[batch_voxels, :]
         corr_batch1 = np.dot(X_batch, X.T) / denom   # shape (batch_size, n_voxels)
 
-        # Same for run2
         Y_batch = Y[batch_voxels, :]
-        corr_batch2 = np.dot(Y_batch, Y.T) / denom   # shape (batch_size, n_voxels)
+        corr_batch2 = np.dot(Y_batch, Y.T) / denom
 
-        # For each voxel in the batch, compute reliability
         for idx_in_batch, global_idx in enumerate(range(start, end)):
-            # Connectivity profile for this voxel (all voxels, including self)
             prof1 = corr_batch1[idx_in_batch, :]
             prof2 = corr_batch2[idx_in_batch, :]
 
             # Remove self‑correlation (which is 1.0)
-            prof1 = np.delete(prof1, global_idx)
-            prof2 = np.delete(prof2, global_idx)
+            #prof1 = np.delete(prof1, global_idx)
+            #prof2 = np.delete(prof2, global_idx)
 
-            # Skip if profile has zero variance
+            # Check for constant profile (should not happen due to mask, but safe)
             if np.std(prof1) == 0 or np.std(prof2) == 0:
                 reliability[global_idx] = 0.0
                 continue
 
+            # Pearson correlation using scipy (could also compute directly)
+            # Use only finite values
+            mask = np.isfinite(prof1) & np.isfinite(prof2)
+            if not np.all(mask):
+                prof1 = prof1[mask]
+                prof2 = prof2[mask]
+            if len(prof1) < 2:
+                reliability[global_idx] = 0.0
+                continue
+
             r_val, _ = pearsonr(prof1, prof2)
-            r_val = np.clip(r_val, -1.0, 1.0)
-            reliability[global_idx] = r_val ** 2
+            if np.isnan(r_val):
+                reliability[global_idx] = 0.0
+            else:
+                r_val = np.clip(r_val, -1.0, 1.0)
+                reliability[global_idx] = r_val ** 2
 
     return reliability
 
