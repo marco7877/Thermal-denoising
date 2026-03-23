@@ -267,7 +267,8 @@ def reliability_analysis(epi_fname, mask, sbref,
 # -----------------------------------------------------------
 if __name__ == "__main__":
     source_dir = "/scratch/mflores/Rest_HighRes/analysis_timeSeries"
-    methods = ["vanilla", "nordic", "tmppca", "mppca", "nordic", "hydra"]
+#    methods = ["vanilla", "nordic", "tmppca", "mppca", "nordic", "hydra"]
+    methods = ["mppca"]
     subjects = ["sub-001"]
     tasks = ["task-REST"]
     runs = ["_run-1"]   # no run label in filenames (adjust if needed)
