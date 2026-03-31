@@ -73,7 +73,6 @@ def save_design_matrix_image(design_matrix, output_file):
     plt.title('Design matrix')
     plt.xlabel('Regressors')
     plt.ylabel('Timepoints')
-    # Reduce x‑tick density if many regressors
     n_cols = design_matrix.shape[1]
     if n_cols > 50:
         plt.xticks(np.arange(0, n_cols, step=max(1, n_cols//20)), rotation=90, fontsize=8)
@@ -85,10 +84,30 @@ def save_design_matrix_image(design_matrix, output_file):
     print(f"Design matrix image saved to {output_file}")
 
 
+def check_mask(mask_img, reference_img=None):
+    """Check that mask has positive voxels and optionally resample to reference."""
+    mask_data = mask_img.get_fdata()
+    if np.sum(mask_data) == 0:
+        raise ValueError("Mask has zero voxels. Check your mask file.")
+    
+    if reference_img is not None:
+        # Check if affine matches; if not, warn and optionally resample
+        if not np.allclose(mask_img.affine, reference_img.affine, rtol=1e-3, atol=1e-3):
+            print("Warning: Mask affine differs from reference image. Resampling mask to reference space.")
+            mask_img = resample_to_img(mask_img, reference_img, interpolation='nearest')
+            # After resampling, check again
+            if np.sum(mask_img.get_fdata()) == 0:
+                raise ValueError("After resampling, mask has zero voxels. Check mask and reference alignment.")
+    return mask_img
+
+
 def apply_mask_to_image(img, mask_img, fill_value=0):
     """Set voxels outside the mask to fill_value (default 0)."""
     data = get_data(img)
     mask_data = mask_img.get_fdata().astype(bool)
+    # Ensure mask has same spatial dimensions as data
+    if data.shape[:-1] != mask_data.shape:
+        raise ValueError(f"Mask shape {mask_data.shape} does not match image spatial shape {data.shape[:-1]}")
     data_out = np.where(mask_data[..., np.newaxis], data, fill_value)
     return new_img_like(img, data_out)
 
@@ -118,13 +137,14 @@ def main():
     if len(args.nii_files) != len(args.events_files):
         raise ValueError("Number of NIfTI files and event files must match")
 
-    # Load mask
-    mask_img = load(args.mask)
-
     # Load and preprocess runs (no scaling)
-    all_runs_imgs, _, run_timepoints = load_and_preprocess_runs(
+    all_runs_imgs, reference_img, run_timepoints = load_and_preprocess_runs(
         args.nii_files, debug=args.debug
     )
+
+    # Load mask, optionally resample to first run's space
+    mask_img = load(args.mask)
+    mask_img = check_mask(mask_img, reference_img=reference_img)
 
     # Load design matrices
     designs = load_design_matrices(args.events_files, run_timepoints, args.n_task_regressors)
@@ -141,6 +161,13 @@ def main():
     print(f"First 5 rows:\n{design_matrix.head()}")
     print("="*60 + "\n")
 
+    # Check design matrix rank
+    rank = np.linalg.matrix_rank(design_matrix.values)
+    print(f"Design matrix rank: {rank} (full rank would be {design_matrix.shape[1]})")
+    if rank < design_matrix.shape[1]:
+        print("WARNING: Design matrix is not full rank. This may cause estimation problems.")
+        # Optionally, you could drop collinear columns here.
+
     # Save design matrix image if requested
     if args.save_design_matrix:
         design_img_file = f"{args.output_prefix}_design_matrix.png"
@@ -148,6 +175,15 @@ def main():
 
     # Concatenate runs
     concat_img = concat_imgs(all_runs_imgs)
+
+    # Optional: check variance of masked data to identify constant voxels
+    mask_data = mask_img.get_fdata().astype(bool)
+    concat_data = get_data(concat_img)
+    if mask_data.sum() > 0:
+        masked_data = concat_data[mask_data, :]
+        variance = np.var(masked_data, axis=1)
+        n_const = np.sum(variance < 1e-6)
+        print(f"Number of constant voxels within mask: {n_const} / {mask_data.sum()} ({100*n_const/mask_data.sum():.2f}%)")
 
     # Fit GLM
     print("Fitting GLM...")
