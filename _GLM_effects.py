@@ -9,7 +9,6 @@ from nilearn.glm.first_level import FirstLevelModel
 import warnings
 warnings.filterwarnings('ignore')
 
-# Optional import for plotting
 try:
     import matplotlib.pyplot as plt
     HAS_MPL = True
@@ -91,7 +90,7 @@ def check_mask(mask_img, reference_img=None):
         raise ValueError("Mask has zero voxels. Check your mask file.")
     
     if reference_img is not None:
-        # Check if affine matches; if not, warn and optionally resample
+        # Check if affine matches; if not, resample mask to reference space
         if not np.allclose(mask_img.affine, reference_img.affine, rtol=1e-3, atol=1e-3):
             print("Warning: Mask affine differs from reference image. Resampling mask to reference space.")
             mask_img = resample_to_img(mask_img, reference_img, interpolation='nearest')
@@ -105,7 +104,6 @@ def apply_mask_to_image(img, mask_img, fill_value=0):
     """Set voxels outside the mask to fill_value (default 0)."""
     data = get_data(img)
     mask_data = mask_img.get_fdata().astype(bool)
-    # Ensure mask has same spatial dimensions as data
     if data.shape[:-1] != mask_data.shape:
         raise ValueError(f"Mask shape {mask_data.shape} does not match image spatial shape {data.shape[:-1]}")
     data_out = np.where(mask_data[..., np.newaxis], data, fill_value)
@@ -166,7 +164,7 @@ def main():
     print(f"Design matrix rank: {rank} (full rank would be {design_matrix.shape[1]})")
     if rank < design_matrix.shape[1]:
         print("WARNING: Design matrix is not full rank. This may cause estimation problems.")
-        # Optionally, you could drop collinear columns here.
+        # You might want to drop collinear columns here, but we continue.
 
     # Save design matrix image if requested
     if args.save_design_matrix:
@@ -176,20 +174,36 @@ def main():
     # Concatenate runs
     concat_img = concat_imgs(all_runs_imgs)
 
-    # Optional: check variance of masked data to identify constant voxels
+    # Check for NaNs/Infs in the concatenated data (within mask)
     mask_data = mask_img.get_fdata().astype(bool)
+    if mask_data.sum() == 0:
+        raise ValueError("Mask has zero voxels after resampling. Cannot proceed.")
+    
     concat_data = get_data(concat_img)
-    if mask_data.sum() > 0:
+    masked_data = concat_data[mask_data, :]
+    if np.any(np.isnan(masked_data)):
+        print("WARNING: Data contains NaNs. Replacing NaNs with 0.")
+        concat_data = np.nan_to_num(concat_data, nan=0.0)
+        concat_img = new_img_like(concat_img, concat_data)
+        masked_data = concat_data[mask_data, :]  # update
+    if np.any(np.isinf(masked_data)):
+        print("WARNING: Data contains Infs. Replacing Infs with 0.")
+        concat_data = np.nan_to_num(concat_data, posinf=0.0, neginf=0.0)
+        concat_img = new_img_like(concat_img, concat_data)
         masked_data = concat_data[mask_data, :]
-        variance = np.var(masked_data, axis=1)
-        n_const = np.sum(variance < 1e-6)
-        print(f"Number of constant voxels within mask: {n_const} / {mask_data.sum()} ({100*n_const/mask_data.sum():.2f}%)")
+
+    # Check constant voxels
+    variance = np.var(masked_data, axis=1)
+    n_const = np.sum(variance < 1e-6)
+    print(f"Number of constant voxels within mask: {n_const} / {mask_data.sum()} ({100*n_const/mask_data.sum():.2f}%)")
+    if n_const == mask_data.sum():
+        raise ValueError("All voxels in mask are constant. GLM cannot estimate any parameters.")
 
     # Fit GLM
     print("Fitting GLM...")
     glm = FirstLevelModel(
         t_r=args.tr,
-        mask_img=None,          # use whole image
+        mask_img=None,
         standardize=True,
         signal_scaling=False,
         hrf_model=args.hrf_model,
@@ -215,7 +229,7 @@ def main():
         beta_data = np.nan_to_num(beta_data, nan=0.0)
         beta_img = new_img_like(beta_img, beta_data)
 
-    # Diagnostic print
+    # Final diagnostics
     t_data = get_data(t_img)
     beta_data = get_data(beta_img)
     mask_data = mask_img.get_fdata().astype(bool)
