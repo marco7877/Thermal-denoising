@@ -5,42 +5,20 @@ import numpy as np
 import pandas as pd
 from nibabel import load, Nifti1Image
 from nilearn.image import concat_imgs, get_data, new_img_like, resample_to_img
-from nilearn.masking import apply_mask
 from nilearn.glm.first_level import FirstLevelModel
 import warnings
 warnings.filterwarnings('ignore')
 
-
-def percent_change_scaling_per_run(img, mask_img, debug=False):
-    """
-    Apply percent change scaling PER RUN: (x - mean)/mean * 100
-    This is done independently for each run before concatenation.
-    """
-    data = get_data(img).astype(np.float64)
-    mask_data = mask_img.get_fdata().astype(bool)
-
-    original_shape = data.shape
-    n_timepoints = original_shape[-1]
-    n_voxels = np.prod(original_shape[:-1])
-    data_reshaped = data.reshape(n_voxels, n_timepoints)
-    mask_flat = mask_data.ravel()
-
-    masked_data = data_reshaped[mask_flat, :].copy()
-    if masked_data.size > 0:
-        voxel_means = np.mean(masked_data, axis=1, keepdims=True)
-        voxel_means_safe = np.where(np.abs(voxel_means) < 1e-6, 1, voxel_means)
-        masked_pc = ((masked_data - voxel_means_safe) / voxel_means_safe) * 100
-        data_pc_reshaped = np.zeros_like(data_reshaped)
-        data_pc_reshaped[mask_flat, :] = masked_pc
-    else:
-        data_pc_reshaped = data_reshaped
-
-    data_pc = data_pc_reshaped.reshape(original_shape).astype(np.float32)
-    return new_img_like(img, data_pc)
+# Optional import for plotting
+try:
+    import matplotlib.pyplot as plt
+    HAS_MPL = True
+except ImportError:
+    HAS_MPL = False
 
 
-def load_and_preprocess_runs(nii_files, mask_img, debug=False):
-    """Load all runs, optionally resample to first run, and apply percent change scaling."""
+def load_and_preprocess_runs(nii_files, debug=False):
+    """Load runs, resample to first run if needed (no scaling)."""
     all_runs_imgs = []
     run_timepoints = []
     reference_img = None
@@ -53,18 +31,17 @@ def load_and_preprocess_runs(nii_files, mask_img, debug=False):
             if not np.allclose(img.affine, reference_img.affine, rtol=1e-3, atol=1e-3):
                 img = resample_to_img(img, reference_img, interpolation='continuous')
         run_timepoints.append(img.shape[-1])
-        img_pc = percent_change_scaling_per_run(img, mask_img, debug=debug)
-        all_runs_imgs.append(img_pc)
+        all_runs_imgs.append(img)
 
     return all_runs_imgs, reference_img, run_timepoints
 
 
 def load_design_matrices(events_files, run_timepoints, n_task_regressors):
-    """Load precomputed design matrices and verify they match run timepoints."""
+    """Load design matrices and verify timepoint match."""
     designs = []
     for i, f in enumerate(events_files):
         df = pd.read_csv(f)
-        df = df.loc[:, ~df.columns.str.contains('^Unnamed')]  # drop empty columns
+        df = df.loc[:, ~df.columns.str.contains('^Unnamed')]
         if len(df) != run_timepoints[i]:
             raise ValueError(f"Timepoint mismatch for run {i}: fMRI={run_timepoints[i]}, Design={len(df)}")
         designs.append(df)
@@ -72,15 +49,11 @@ def load_design_matrices(events_files, run_timepoints, n_task_regressors):
 
 
 def build_block_design(designs, n_task_regressors):
-    """
-    Build a block‑diagonal design matrix from a list of run‑specific DataFrames.
-    Task columns are shared across runs; nuisance columns are renamed per run.
-    """
+    """Build block‑diagonal design matrix with run‑specific nuisance columns."""
     blocks = []
     for run_idx, df in enumerate(designs):
         task_part = df.iloc[:, :n_task_regressors]
         nuisance_part = df.iloc[:, n_task_regressors:]
-        # Rename nuisance columns to be run‑specific
         rename_dict = {col: f"{col}_run{run_idx}" for col in nuisance_part.columns}
         nuisance_part = nuisance_part.rename(columns=rename_dict)
         run_design = pd.concat([task_part, nuisance_part], axis=1)
@@ -88,20 +61,57 @@ def build_block_design(designs, n_task_regressors):
     return pd.concat(blocks, axis=0, ignore_index=True).fillna(0)
 
 
+def save_design_matrix_image(design_matrix, output_file):
+    """Save a heatmap of the design matrix to a PNG file."""
+    if not HAS_MPL:
+        print("Warning: matplotlib not installed. Cannot save design matrix image.")
+        return
+
+    plt.figure(figsize=(12, 8))
+    plt.imshow(design_matrix.values, aspect='auto', cmap='RdBu_r', interpolation='none')
+    plt.colorbar(label='Regressor value')
+    plt.title('Design matrix')
+    plt.xlabel('Regressors')
+    plt.ylabel('Timepoints')
+    # Reduce x‑tick density if many regressors
+    n_cols = design_matrix.shape[1]
+    if n_cols > 50:
+        plt.xticks(np.arange(0, n_cols, step=max(1, n_cols//20)), rotation=90, fontsize=8)
+    else:
+        plt.xticks(np.arange(n_cols), design_matrix.columns, rotation=90, fontsize=8)
+    plt.tight_layout()
+    plt.savefig(output_file, dpi=150)
+    plt.close()
+    print(f"Design matrix image saved to {output_file}")
+
+
+def apply_mask_to_image(img, mask_img, fill_value=0):
+    """Set voxels outside the mask to fill_value (default 0)."""
+    data = get_data(img)
+    mask_data = mask_img.get_fdata().astype(bool)
+    data_out = np.where(mask_data[..., np.newaxis], data, fill_value)
+    return new_img_like(img, data_out)
+
+
 def main():
     parser = argparse.ArgumentParser(description="Simple first‑level GLM")
-    parser.add_argument("--nii_files", nargs="+", required=True, help="List of NIfTI files (one per run)")
-    parser.add_argument("--events_files", nargs="+", required=True, help="List of CSV design matrices (one per run)")
-    parser.add_argument("--mask", required=True, help="Mask image")
-    parser.add_argument("--n_task_regressors", type=int, required=True,
-                        help="Number of task regressors at the beginning of each design matrix")
+    parser.add_argument("--nii_files", nargs="+", required=True)
+    parser.add_argument("--events_files", nargs="+", required=True)
+    parser.add_argument("--mask", required=True)
+    parser.add_argument("--n_task_regressors", type=int, required=True)
     parser.add_argument("--contrast", type=str,
-                        default="face1-(bodylimb1+ES_SC1+ES_RW1+ES_FF1+ES_CS1)/5",
-                        help="Contrast expression (use column names from the design matrix)")
-    parser.add_argument("--tr", type=float, default=2.0, help="Repetition time (seconds)")
-    parser.add_argument("--hrf_model", type=str, default="spm", help="HRF model (e.g., 'spm', 'glover')")
-    parser.add_argument("--output_prefix", required=True, help="Prefix for output files")
-    parser.add_argument("--debug", action="store_true", help="Print debug information")
+                        default="face1-(bodylimb1+ES_SC1+ES_RW1+ES_FF1+ES_CS1)/5")
+    parser.add_argument("--tr", type=float, default=2.0)
+    parser.add_argument("--hrf_model", type=str, default="glover",
+                        help="HRF model: 'spm', 'glover', 'spm + derivative', etc.")
+    parser.add_argument("--output_prefix", required=True)
+    parser.add_argument("--debug", action="store_true")
+    parser.add_argument("--mask_output", action="store_true",
+                        help="Apply mask to output images (set outside mask to 0)")
+    parser.add_argument("--fill_nan", action="store_true",
+                        help="Replace NaN values with 0 in output images")
+    parser.add_argument("--save_design_matrix", action="store_true",
+                        help="Save design matrix as PNG image (requires matplotlib)")
     args = parser.parse_args()
 
     # Validate inputs
@@ -110,27 +120,40 @@ def main():
 
     # Load mask
     mask_img = load(args.mask)
-    mask_data = mask_img.get_fdata().astype(bool)
 
-    # Load and preprocess runs (including per‑run percent change scaling)
+    # Load and preprocess runs (no scaling)
     all_runs_imgs, _, run_timepoints = load_and_preprocess_runs(
-        args.nii_files, mask_img, debug=args.debug
+        args.nii_files, debug=args.debug
     )
 
     # Load design matrices
     designs = load_design_matrices(args.events_files, run_timepoints, args.n_task_regressors)
 
-    # Build block‑diagonal design matrix
+    # Build block‑diagonal design
     design_matrix = build_block_design(designs, args.n_task_regressors)
 
-    # Concatenate all runs into one 4D image
+    # Print design matrix details
+    print("\n" + "="*60)
+    print("DESIGN MATRIX")
+    print("="*60)
+    print(f"Shape: {design_matrix.shape} (rows = total timepoints, columns = regressors)")
+    print(f"Columns: {design_matrix.columns.tolist()}")
+    print(f"First 5 rows:\n{design_matrix.head()}")
+    print("="*60 + "\n")
+
+    # Save design matrix image if requested
+    if args.save_design_matrix:
+        design_img_file = f"{args.output_prefix}_design_matrix.png"
+        save_design_matrix_image(design_matrix, design_img_file)
+
+    # Concatenate runs
     concat_img = concat_imgs(all_runs_imgs)
 
     # Fit GLM
     print("Fitting GLM...")
     glm = FirstLevelModel(
         t_r=args.tr,
-        mask_img=None,
+        mask_img=None,          # use whole image
         standardize=True,
         signal_scaling=False,
         hrf_model=args.hrf_model,
@@ -141,18 +164,50 @@ def main():
     # Compute contrast
     print(f"Computing contrast: {args.contrast}")
     t_img = glm.compute_contrast(args.contrast, stat_type="t")
-    beta_img = glm.compute_contrast(args.contrast, stat_type="effect_size")   # effect size (beta)
+    beta_img = glm.compute_contrast(args.contrast, stat_type="effect_size")
+
+    # Optionally apply mask and/or fill NaN
+    if args.mask_output:
+        t_img = apply_mask_to_image(t_img, mask_img)
+        beta_img = apply_mask_to_image(beta_img, mask_img)
+
+    if args.fill_nan:
+        t_data = get_data(t_img)
+        t_data = np.nan_to_num(t_data, nan=0.0)
+        t_img = new_img_like(t_img, t_data)
+        beta_data = get_data(beta_img)
+        beta_data = np.nan_to_num(beta_data, nan=0.0)
+        beta_img = new_img_like(beta_img, beta_data)
+
+    # Diagnostic print
+    t_data = get_data(t_img)
+    beta_data = get_data(beta_img)
+    mask_data = mask_img.get_fdata().astype(bool)
+
+    t_masked = t_data[mask_data]
+    beta_masked = beta_data[mask_data]
+
+    n_nan_t = np.isnan(t_masked).sum()
+    n_nan_beta = np.isnan(beta_masked).sum()
+    n_voxels = mask_data.sum()
+
+    print(f"\nDiagnostics within mask ({n_voxels} voxels):")
+    print(f"  t‑statistic: NaNs = {n_nan_t} ({100*n_nan_t/n_voxels:.2f}%)")
+    if not np.all(np.isnan(t_masked)):
+        print(f"    min/max = {np.nanmin(t_masked):.4f} / {np.nanmax(t_masked):.4f}")
+        print(f"    mean ± std = {np.nanmean(t_masked):.4f} ± {np.nanstd(t_masked):.4f}")
+    print(f"  beta (effect): NaNs = {n_nan_beta} ({100*n_nan_beta/n_voxels:.2f}%)")
+    if not np.all(np.isnan(beta_masked)):
+        print(f"    min/max = {np.nanmin(beta_masked):.4f} / {np.nanmax(beta_masked):.4f}")
+        print(f"    mean ± std = {np.nanmean(beta_masked):.4f} ± {np.nanstd(beta_masked):.4f}")
 
     # Save outputs
     t_out = f"{args.output_prefix}_t.nii.gz"
     beta_out = f"{args.output_prefix}_beta.nii.gz"
     t_img.to_filename(t_out)
     beta_img.to_filename(beta_out)
-    print(f"Saved t‑statistic map: {t_out}")
+    print(f"\nSaved t‑statistic map: {t_out}")
     print(f"Saved beta map: {beta_out}")
-
-    # Optional: also save the design matrix used (for verification)
-    # design_matrix.to_csv(f"{args.output_prefix}_design_matrix.csv", index=False)
 
     print("Done.")
 
