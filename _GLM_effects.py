@@ -174,11 +174,12 @@ def main():
     # Concatenate runs
     concat_img = concat_imgs(all_runs_imgs)
 
-    # Check for NaNs/Infs in the concatenated data (within mask)
+    # --- Check data for NaNs/Infs and constant voxels within the mask ---
     mask_data = mask_img.get_fdata().astype(bool)
     if mask_data.sum() == 0:
         raise ValueError("Mask has zero voxels after resampling. Cannot proceed.")
     
+    # Extract data within mask for diagnostics
     concat_data = get_data(concat_img)
     masked_data = concat_data[mask_data, :]
     if np.any(np.isnan(masked_data)):
@@ -199,11 +200,11 @@ def main():
     if n_const == mask_data.sum():
         raise ValueError("All voxels in mask are constant. GLM cannot estimate any parameters.")
 
-    # Fit GLM
-    print("Fitting GLM...")
+    # --- Fit GLM using the mask (so only masked voxels are analyzed) ---
+    print("Fitting GLM (masked)...")
     glm = FirstLevelModel(
         t_r=args.tr,
-        mask_img=None,
+        mask_img=mask_img,               # <-- THIS IS THE KEY FIX
         standardize=True,
         signal_scaling=False,
         hrf_model=args.hrf_model,
@@ -216,8 +217,9 @@ def main():
     t_img = glm.compute_contrast(args.contrast, stat_type="t")
     beta_img = glm.compute_contrast(args.contrast, stat_type="effect_size")
 
-    # Optionally apply mask and/or fill NaN
+    # Post‑processing: optionally apply extra masking or NaN filling
     if args.mask_output:
+        # The output already has NaNs outside mask. Setting outside to 0 (optional).
         t_img = apply_mask_to_image(t_img, mask_img)
         beta_img = apply_mask_to_image(beta_img, mask_img)
 
@@ -229,11 +231,10 @@ def main():
         beta_data = np.nan_to_num(beta_data, nan=0.0)
         beta_img = new_img_like(beta_img, beta_data)
 
-    # Final diagnostics
+    # Final diagnostics (now only masked voxels have values)
     t_data = get_data(t_img)
     beta_data = get_data(beta_img)
-    mask_data = mask_img.get_fdata().astype(bool)
-
+    # Use the same mask (which the GLM used)
     t_masked = t_data[mask_data]
     beta_masked = beta_data[mask_data]
 
