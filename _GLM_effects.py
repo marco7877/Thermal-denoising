@@ -215,7 +215,7 @@ def main():
     # Compute contrast
     print(f"Computing contrast: {args.contrast}")
     t_img = glm.compute_contrast(args.contrast, stat_type="t")
-    beta_img = glm.compute_contrast(args.contrast, stat_type="effect_size")
+    beta_img = glm.compute_contrast(args.contrast, output_type="effect_size")
 
     # Post‑processing: optionally apply extra masking or NaN filling
     if args.mask_output:
